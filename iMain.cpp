@@ -14,7 +14,7 @@
 #define DOWN 0x0004
 
 bool firstDraw = true;
-
+bool blockedSides[4] = {false}; // Left, Right, Up, Down
 
 // Player represented as an array: {x, y, width, height}
 double player[4] = {
@@ -26,22 +26,50 @@ double platforms[][4] = {
     {WIDTH * 5.0 / 9, 100, WIDTH / 3.0, 50} // Platform 2
 };
 
-int touchingBoundary()
+bool doesTouchLeftBoundary(double x)
 {
-    if (player[0] <= 0)
-        return LEFT;
-    else if (player[0] + player[2] >= WIDTH)
-        return RIGHT;
-    else if (player[1] <= 0)
-        return DOWN;
-    else if (player[1] + player[3] >= HEIGHT)
-        return UP;
-    return 0; // Not touching any boundary
+    return x <= 0;
 }
 
-int blockedSide()
+bool doesTouchRightBoundary(double x, double width)
 {
-    return touchingBoundary();
+    return x + width >= WIDTH;
+}
+
+bool doesTouchUpBoundary(double y, double height)
+{
+    return y + height >= HEIGHT;
+}
+
+bool doesTouchDownBoundary(double y)
+{
+    return y <= 0;
+}
+
+void touchingBoundaries()
+{
+    if (doesTouchLeftBoundary(player[0]))
+        blockedSides[LEFT - 1] = true;
+    if (doesTouchRightBoundary(player[0], player[2]))
+        blockedSides[RIGHT - 1] = true;
+    if (doesTouchUpBoundary(player[1], player[3]))
+        blockedSides[UP - 1] = true;
+    if (doesTouchDownBoundary(player[1]))
+        blockedSides[DOWN - 1] = true;
+}
+
+void updateBlockedSides()
+{
+    for (int i = 0; i < 4; i++)
+    {
+        blockedSides[i] = false; // Reset blocked sides
+    }
+    touchingBoundaries();
+}
+
+bool isBlocked(int side)
+{
+    return blockedSides[side - 1];
 }
 
 void iDraw()
@@ -69,31 +97,51 @@ void iDraw()
 
 void iKeyboard(unsigned char key)
 {
+    updateBlockedSides();
     switch (key)
     {
-    // TODO: Implement the logic where the player is currently not blocked, but will be blocked if it moves, then it will move only the available space.
     case 'a':
-        if (blockedSide() != LEFT)
+        if (!isBlocked(LEFT))
         {
-            player[0] -= 10;
+            if (doesTouchLeftBoundary(player[0] - 10))
+            {
+                player[0] = 0; // Prevent going out of bounds
+            }
+            else
+                player[0] -= 10;
         }
         break;
     case 'd':
-        if (blockedSide() != RIGHT)
+        if (!isBlocked(RIGHT))
         {
-            player[0] += 10;
+            if (doesTouchRightBoundary(player[0] + 10, player[2]))
+            {
+                player[0] = WIDTH - player[2]; // Prevent going out of bounds
+            }
+            else
+                player[0] += 10;
         }
         break;
     case 'w':
-        if (blockedSide() != UP)
+        if (!isBlocked(UP))
         {
-            player[1] += 10;
+            if (doesTouchUpBoundary(player[1] + 10, player[3]))
+            {
+                player[1] = HEIGHT - player[3]; // Prevent going out of bounds
+            }
+            else
+                player[1] += 10;
         }
         break;
     case 's':
-        if (blockedSide() != DOWN)
+        if (!isBlocked(DOWN))
         {
-            player[1] -= 10;
+            if (doesTouchDownBoundary(player[1] - 10))
+            {
+                player[1] = 0; // Prevent going out of bounds
+            }
+            else
+                player[1] -= 10;
         }
         break;
     default:
