@@ -15,10 +15,10 @@
 
 bool firstDraw = true;
 bool blockedSides[4] = {false}; // Left, Right, Up, Down
+double t = 0;
 
 // Player represented as an array: {x, y, width, height}
-double player[4] = {
-    WIDTH / 9.0, 150, 50, 50};
+double player[4] = {WIDTH / 9.0, 150, 50, 50};
 
 // Platforms represented as an array of arrays: {x, y, width, height}
 double platforms[][4] = {
@@ -55,7 +55,10 @@ void touchingBoundaries()
     if (doesTouchUpBoundary(player[1], player[3]))
         blockedSides[UP - 1] = true;
     if (doesTouchDownBoundary(player[1]))
+    {
         blockedSides[DOWN - 1] = true;
+        t = 0;
+    }
 }
 
 void updateBlockedSides()
@@ -70,6 +73,33 @@ void updateBlockedSides()
 bool isBlocked(int side)
 {
     return blockedSides[side - 1];
+}
+
+void goUp(int amount)
+{
+    if (!isBlocked(UP))
+    {
+        if (doesTouchUpBoundary(player[1] + amount, player[3]))
+        {
+            player[1] = HEIGHT - player[3]; // Prevent going out of bounds
+        }
+        else
+            player[1] += amount;
+        t = 0;
+    }
+}
+
+void goDown(int amount)
+{
+    if (!isBlocked(DOWN))
+    {
+        if (doesTouchDownBoundary(player[1] - amount))
+        {
+            player[1] = 0; // Prevent going out of bounds
+        }
+        else
+            player[1] -= amount;
+    }
 }
 
 void iDraw()
@@ -93,6 +123,13 @@ void iDraw()
     // Player
     iSetColor(250, 0, 0);
     iFilledRectangle(player[0], player[1], player[2], player[3]);
+
+    updateBlockedSides();
+
+    // Apply gravity effect
+    t++;
+    double gravityDeltaY = 0.03 * (t * 2 - 1); // TODO: Store the 0.03 magic number to somewhere.
+    goDown(gravityDeltaY);
 }
 
 void iKeyboard(unsigned char key)
@@ -100,6 +137,12 @@ void iKeyboard(unsigned char key)
     updateBlockedSides();
     switch (key)
     {
+    // TODO: Instead of moving a certain amount, implement a intial velocity mechanism as well as friction.
+    // TODO: Try to handle both left and right movement by a single function.
+    case 'w':
+        // TODO: Animate going up.
+        goUp(100);
+        break;
     case 'a':
         if (!isBlocked(LEFT))
         {
@@ -122,38 +165,12 @@ void iKeyboard(unsigned char key)
                 player[0] += 10;
         }
         break;
-    case 'w':
-        if (!isBlocked(UP))
-        {
-            if (doesTouchUpBoundary(player[1] + 10, player[3]))
-            {
-                player[1] = HEIGHT - player[3]; // Prevent going out of bounds
-            }
-            else
-                player[1] += 10;
-        }
-        break;
-    case 's':
-        if (!isBlocked(DOWN))
-        {
-            if (doesTouchDownBoundary(player[1] - 10))
-            {
-                player[1] = 0; // Prevent going out of bounds
-            }
-            else
-                player[1] -= 10;
-        }
-        break;
     default:
         break;
     }
 }
 
-/* GLUT_KEY_F1, GLUT_KEY_F2, GLUT_KEY_F3, GLUT_KEY_F4, GLUT_KEY_F5, GLUT_KEY_F6,
-GLUT_KEY_F7, GLUT_KEY_F8, GLUT_KEY_F9, GLUT_KEY_F10, GLUT_KEY_F11,
-GLUT_KEY_F12, GLUT_KEY_LEFT, GLUT_KEY_UP, GLUT_KEY_RIGHT, GLUT_KEY_DOWN,
-GLUT_KEY_PAGE_UP, GLUT_KEY_PAGE_DOWN, GLUT_KEY_HOME, GLUT_KEY_END,
-GLUT_KEY_INSERT */
+// GLUT_KEY_F1, GLUT_KEY_F2, GLUT_KEY_F3, GLUT_KEY_F4, GLUT_KEY_F5, GLUT_KEY_F6, GLUT_KEY_F7, GLUT_KEY_F8, GLUT_KEY_F9, GLUT_KEY_F10, GLUT_KEY_F11, GLUT_KEY_F12, GLUT_KEY_LEFT, GLUT_KEY_UP, GLUT_KEY_RIGHT, GLUT_KEY_DOWN, GLUT_KEY_PAGE_UP, GLUT_KEY_PAGE_DOWN, GLUT_KEY_HOME, GLUT_KEY_END, GLUT_KEY_INSERT
 void iSpecialKeyboard(unsigned char key)
 {
     switch (key)
