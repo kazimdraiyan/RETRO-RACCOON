@@ -39,12 +39,6 @@ double t = 0;
 // Player represented as an array: {x, y, width, height}
 double player[4] = {WIDTH / 9.0, 150, 30, 30};
 
-// Platforms represented as an array of arrays: {x, y, width, height}
-double platforms[][4] = {
-    {WIDTH / 9.0, 100, WIDTH / 3.0, 50},    // Platform 1
-    {WIDTH * 5.0 / 9, 100, WIDTH / 3.0, 50} // Platform 2
-};
-
 char tiles[ROWS][COLUMNS + 1] = {};
 
 bool doesTouchLeftBoundary(double x)
@@ -80,6 +74,18 @@ void touchingBoundaries()
         blockedSides[DOWN - 1] = true;
         t = 0;
     }
+}
+
+// TODO: Fix collisions at the front of a platform.
+bool collidesWithTile(double x, double y, double width, double height)
+{
+    int tileRow = (ROWS - 1) - (int)(y / (HEIGHT / ROWS));
+    int tileCol = (int)(x / (WIDTH / COLUMNS));
+
+    if (tileRow < 0 || tileRow >= ROWS || tileCol < 0 || tileCol >= COLUMNS)
+        return false; // Out of bounds
+
+    return tiles[tileRow][tileCol] == '#';
 }
 
 void updateBlockedSides()
@@ -163,7 +169,16 @@ void iDraw()
     // Apply gravity effect
     t++;
     double gravityDeltaY = 0.03 * (t * 2 - 1); // TODO: Store the 0.03 magic number to somewhere.
-    goDown(gravityDeltaY);
+    if (collidesWithTile(player[0], player[1] - gravityDeltaY, player[2], player[3]))
+    {
+        // TODO: Go down until the player is on the tile.
+        t = 0;
+        gravityDeltaY = 0;
+    }
+    else
+    {
+        goDown(gravityDeltaY);
+    }
 
     if (currentPage == MENU_PAGE)
     {
@@ -346,9 +361,10 @@ int main(int argc, char *argv[])
     char discard[2];
     if (file_pointer != NULL)
     {
-        for (int row = 1; row <= ROWS; row++) {
+        for (int row = 1; row <= ROWS; row++)
+        {
             fgets(tiles[row - 1], COLUMNS + 1, file_pointer); // +1 for null terminator.
-            fgets(discard, 1+1, file_pointer); // Read and discard the newline character. +1 for null terminator.
+            fgets(discard, 1 + 1, file_pointer);              // Read and discard the newline character. +1 for null terminator.
         }
 
         for (int i = 0; i < ROWS; i++)
