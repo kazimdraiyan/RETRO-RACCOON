@@ -3,8 +3,10 @@
 // TODO: Try to use object oriented programming.
 // TODO: Try to add Dvorak keyboard support.
 
-#define WIDTH 1560
+#define WIDTH 1280
 #define HEIGHT 720
+#define COLUMNS 64
+#define ROWS 36
 #define TITLE "Platformer Game"
 
 // TODO: Check out how these constants work and be optimized.
@@ -23,7 +25,8 @@ int currentPage = MENU_PAGE;
 
 void drawMenuPage();
 
-Image menu_background_image;
+Image background_image;
+Image tile;
 
 int hoverRectangleYs[5] = {HEIGHT / 2 + 40};
 int hoverRectangleY = -1;
@@ -34,13 +37,15 @@ bool blockedSides[4] = {false}; // Left, Right, Up, Down
 double t = 0;
 
 // Player represented as an array: {x, y, width, height}
-double player[4] = {WIDTH / 9.0, 150, 50, 50};
+double player[4] = {WIDTH / 9.0, 150, 30, 30};
 
 // Platforms represented as an array of arrays: {x, y, width, height}
 double platforms[][4] = {
     {WIDTH / 9.0, 100, WIDTH / 3.0, 50},    // Platform 1
     {WIDTH * 5.0 / 9, 100, WIDTH / 3.0, 50} // Platform 2
 };
+
+char tiles[ROWS][COLUMNS + 1] = {};
 
 bool doesTouchLeftBoundary(double x)
 {
@@ -123,23 +128,34 @@ void iDraw()
     if (firstDraw)
     {
         // glutFullScreen();
-        iLoadImage(&menu_background_image, "assets/images/menu_page_background.png");
-        iResizeImage(&menu_background_image, WIDTH, HEIGHT);
+        iLoadImage(&background_image, "assets/images/menu_page_background.png");
+        iResizeImage(&background_image, WIDTH, HEIGHT);
+
+        iLoadImage(&tile, "assets/images/tile.png");
+        iResizeImage(&tile, WIDTH / COLUMNS, HEIGHT / ROWS);
         firstDraw = false;
     }
 
     iClear();
 
-    iSetColor(50, 50, 50);
-    iFilledRectangle(0, 0, WIDTH, HEIGHT); // Background
+    // Draw background
+    iSetColor(255, 255, 255);
+    iShowLoadedImage(0, 0, &background_image);
 
-    // Two platforms
-    iSetColor(0, 0, 0);
-    iFilledRectangle(platforms[0][0], platforms[0][1], platforms[0][2], platforms[0][3]); // Platform 1
-    iFilledRectangle(platforms[1][0], platforms[1][1], platforms[1][2], platforms[1][3]); // Platform 2
+    // Draw tiles
+    for (int row = 0; row < ROWS; row++)
+    {
+        for (int col = 0; col < COLUMNS; col++)
+        {
+            if (tiles[row][col] == '#')
+            {
+                iShowLoadedImage(col * (WIDTH / COLUMNS), (ROWS - row - 1) * (HEIGHT / ROWS), &tile);
+            }
+        }
+    }
 
     // Player
-    iSetColor(250, 0, 0);
+    iSetColor(40, 75, 30);
     iFilledRectangle(player[0], player[1], player[2], player[3]);
 
     updateBlockedSides();
@@ -213,7 +229,7 @@ void drawMenuPage()
     iClear();
     iSetColor(255, 255, 255);
 
-    iShowLoadedImage(0, 0, &menu_background_image);
+    iShowLoadedImage(0, 0, &background_image);
 
     iSetColor(0, 0, 0);
     iTextAdvanced(WIDTH / 2 - 250, HEIGHT / 2 + 200, "Platformer Game", 0.5, 5.0, GLUT_STROKE_ROMAN);
@@ -286,6 +302,7 @@ void iMouse(int button, int state, int mx, int my)
 {
     if (currentPage != MENU_PAGE)
         return;
+    // TODO: Add click effect?
     // Button click handling
     if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN)
     {
@@ -314,7 +331,6 @@ void iMouse(int button, int state, int mx, int my)
             printf("Exit button clicked\n");
             exit(0);
         }
-        // hoverRectangleY = -1;
     }
 }
 
@@ -324,6 +340,28 @@ void iMouseWheel(int dir, int mx, int my)
 
 int main(int argc, char *argv[])
 {
+    // Loading levels
+    FILE *file_pointer;
+    file_pointer = fopen("levels/level1.txt", "r");
+    char discard[2];
+    if (file_pointer != NULL)
+    {
+        for (int row = 1; row <= ROWS; row++) {
+            fgets(tiles[row - 1], COLUMNS + 1, file_pointer); // +1 for null terminator.
+            fgets(discard, 1+1, file_pointer); // Read and discard the newline character. +1 for null terminator.
+        }
+
+        for (int i = 0; i < ROWS; i++)
+        {
+            printf("%d: %s\n", i, tiles[i]);
+        }
+    }
+    else
+    {
+        printf("Failed to load level.");
+    }
+    fclose(file_pointer);
+
     for (int i = 1; i < 5; i++)
     {
         hoverRectangleYs[i] = hoverRectangleYs[i - 1] - hoverRectangleHeight;
