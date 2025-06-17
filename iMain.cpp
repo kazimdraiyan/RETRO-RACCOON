@@ -3,8 +3,8 @@
 // TODO: Try to use object oriented programming.
 // TODO: Try to add Dvorak keyboard support.
 
-#define WIDTH 1920
-#define HEIGHT 1080
+#define WIDTH 1560
+#define HEIGHT 720
 #define TITLE "Platformer Game"
 
 // TODO: Check out how these constants work and be optimized.
@@ -12,6 +12,22 @@
 #define RIGHT 0x0002
 #define UP 0x0003
 #define DOWN 0x0004
+
+#define MENU_PAGE 0x0000
+#define GAME_PAGE 0x0001
+#define LEVELS_PAGE 0x0002
+#define HIGH_SCORES_PAGE 0x0003
+#define OPTIONS_PAGE 0x0004
+
+int currentPage = MENU_PAGE;
+
+void drawMenuPage();
+
+Image menu_background_image;
+
+int hoverRectangleYs[5] = {HEIGHT / 2 + 40};
+int hoverRectangleY = -1;
+int hoverRectangleHeight = 50;
 
 bool firstDraw = true;
 bool blockedSides[4] = {false}; // Left, Right, Up, Down
@@ -106,7 +122,9 @@ void iDraw()
 {
     if (firstDraw)
     {
-        glutFullScreen();
+        // glutFullScreen();
+        iLoadImage(&menu_background_image, "assets/images/menu_page_background.png");
+        iResizeImage(&menu_background_image, WIDTH, HEIGHT);
         firstDraw = false;
     }
 
@@ -130,6 +148,23 @@ void iDraw()
     t++;
     double gravityDeltaY = 0.03 * (t * 2 - 1); // TODO: Store the 0.03 magic number to somewhere.
     goDown(gravityDeltaY);
+
+    if (currentPage == MENU_PAGE)
+    {
+        drawMenuPage();
+    }
+    else if (currentPage == GAME_PAGE)
+    {
+    }
+    else if (currentPage == LEVELS_PAGE)
+    {
+    }
+    else if (currentPage == HIGH_SCORES_PAGE)
+    {
+    }
+    else if (currentPage == OPTIONS_PAGE)
+    {
+    }
 }
 
 void iKeyboard(unsigned char key)
@@ -165,8 +200,35 @@ void iKeyboard(unsigned char key)
                 player[0] += 10;
         }
         break;
+    case 27: // Escape key
+        currentPage = MENU_PAGE;
+        break;
     default:
         break;
+    }
+}
+
+void drawMenuPage()
+{
+    iClear();
+    iSetColor(255, 255, 255);
+
+    iShowLoadedImage(0, 0, &menu_background_image);
+
+    iSetColor(0, 0, 0);
+    iTextAdvanced(WIDTH / 2 - 250, HEIGHT / 2 + 200, "Platformer Game", 0.5, 5.0, GLUT_STROKE_ROMAN);
+
+    iTextAdvanced(WIDTH / 2 - 100, HEIGHT / 2 + 50, "Resume", 0.3, 2.5, GLUT_STROKE_ROMAN);
+    iTextAdvanced(WIDTH / 2 - 100, HEIGHT / 2 + 0, "Levels", 0.3, 2.5, GLUT_STROKE_ROMAN);
+    iTextAdvanced(WIDTH / 2 - 100, HEIGHT / 2 - 50, "High Scores", 0.3, 2.5, GLUT_STROKE_ROMAN);
+    iTextAdvanced(WIDTH / 2 - 100, HEIGHT / 2 - 100, "Options", 0.3, 2.5, GLUT_STROKE_ROMAN);
+    iTextAdvanced(WIDTH / 2 - 100, HEIGHT / 2 - 150, "Exit", 0.3, 2.5, GLUT_STROKE_ROMAN);
+
+    // Draw hover effect rectangles
+    if (hoverRectangleY != -1)
+    {
+        iSetTransparentColor(100, 100, 100, 0.25); // TODO: Change the hover color, the current one looks bad.
+        iFilledRectangle(0, hoverRectangleY, WIDTH, hoverRectangleHeight);
     }
 }
 
@@ -182,6 +244,38 @@ void iSpecialKeyboard(unsigned char key)
 
 void iMouseMove(int mx, int my)
 {
+    if (currentPage != MENU_PAGE)
+        return;
+    // Hover effect
+    if (my >= hoverRectangleYs[0] && my <= hoverRectangleYs[0] + hoverRectangleHeight)
+    {
+        // Resume button
+        hoverRectangleY = hoverRectangleYs[0];
+    }
+    else if (my >= hoverRectangleYs[1] && my <= hoverRectangleYs[1] + hoverRectangleHeight)
+    {
+        // Levels button
+        hoverRectangleY = hoverRectangleYs[1];
+    }
+    else if (my >= hoverRectangleYs[2] && my <= hoverRectangleYs[2] + hoverRectangleHeight)
+    {
+        // High Scores button
+        hoverRectangleY = hoverRectangleYs[2];
+    }
+    else if (my >= hoverRectangleYs[3] && my <= hoverRectangleYs[3] + hoverRectangleHeight)
+    {
+        // Options button
+        hoverRectangleY = hoverRectangleYs[3];
+    }
+    else if (my >= hoverRectangleYs[4] && my <= hoverRectangleYs[4] + hoverRectangleHeight)
+    {
+        // Exit button
+        hoverRectangleY = hoverRectangleYs[4];
+    }
+    else
+    {
+        hoverRectangleY = -1;
+    }
 }
 
 void iMouseDrag(int mx, int my)
@@ -190,6 +284,38 @@ void iMouseDrag(int mx, int my)
 
 void iMouse(int button, int state, int mx, int my)
 {
+    if (currentPage != MENU_PAGE)
+        return;
+    // Button click handling
+    if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN)
+    {
+        if (my >= hoverRectangleYs[0] && my <= hoverRectangleYs[0] + hoverRectangleHeight)
+        {
+            printf("Resume button clicked\n");
+            currentPage = GAME_PAGE;
+        }
+        else if (my >= hoverRectangleYs[1] && my <= hoverRectangleYs[1] + hoverRectangleHeight)
+        {
+            printf("Levels button clicked\n");
+            currentPage = LEVELS_PAGE;
+        }
+        else if (my >= hoverRectangleYs[2] && my <= hoverRectangleYs[2] + hoverRectangleHeight)
+        {
+            printf("High Scores button clicked\n");
+            currentPage = HIGH_SCORES_PAGE;
+        }
+        else if (my >= hoverRectangleYs[3] && my <= hoverRectangleYs[3] + hoverRectangleHeight)
+        {
+            printf("Options button clicked\n");
+            currentPage = OPTIONS_PAGE;
+        }
+        else if (my >= hoverRectangleYs[4] && my <= hoverRectangleYs[4] + hoverRectangleHeight)
+        {
+            printf("Exit button clicked\n");
+            exit(0);
+        }
+        // hoverRectangleY = -1;
+    }
 }
 
 void iMouseWheel(int dir, int mx, int my)
@@ -198,8 +324,12 @@ void iMouseWheel(int dir, int mx, int my)
 
 int main(int argc, char *argv[])
 {
-    glutInit(&argc, argv);
+    for (int i = 1; i < 5; i++)
+    {
+        hoverRectangleYs[i] = hoverRectangleYs[i - 1] - hoverRectangleHeight;
+    }
 
+    glutInit(&argc, argv);
     iInitialize(WIDTH, HEIGHT, TITLE);
 
     return 0;
