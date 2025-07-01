@@ -5,14 +5,16 @@
 // TODO: Try to use object oriented programming.
 // TODO: Try to add Dvorak keyboard support.
 // TODO: Remove the printf statements after finishing the game.
-// TODO: Use iSetTimer to handle the game loop instead of using t variable.
 // ? How often the iDraw() function is called? Is it constant or device dependent?
+
+// TODO: Bug: Player moving to the right on its own.
 
 #define WIDTH 1280
 #define HEIGHT 720
 #define COLUMNS 64
 #define ROWS 36
 #define TITLE "Platformer Game"
+#define TILE_SIZE (WIDTH / COLUMNS)
 
 // TODO: Learn more about enum.
 enum Direction
@@ -32,6 +34,13 @@ enum Page
     OPTIONS_PAGE
 };
 
+typedef struct
+{
+    double x;
+    double y;
+    double length;
+} Blocker;
+
 // * Game UI management variables
 int currentPage = MENU_PAGE;
 int currentLevel = 0;
@@ -46,8 +55,10 @@ Image tile;
 char tiles[ROWS][COLUMNS + 1] = {};
 
 // * Game state variables
+int gameStateUpdateTimer;
 bool blockedSides[4] = {false}; // Left, Right, Up, Down // TODO: Find a better way to handle this.
-double t = 0;
+double velocityX = 0;
+double velocityY = 0;
 int collectedCoins = 0;
 // TODO: Add Player struct
 // Player represented as an array: {x, y, width, height}
@@ -60,6 +71,7 @@ void drawHighScoresPage();
 void drawOptionsPage();
 
 void drawCoinCount();
+void drawTilesAndCoins();
 
 // * Initialization functions
 void loadLevel(int level)
@@ -99,46 +111,11 @@ void initializeHoverRectangleYs()
 }
 
 // * Game logic functions
-bool doesTouchLeftBoundary(double x)
-{
-    return x <= 0;
-}
-
-bool doesTouchRightBoundary(double x, double width)
-{
-    return x + width >= WIDTH;
-}
-
-bool doesTouchUpBoundary(double y, double height)
-{
-    return y + height >= HEIGHT;
-}
-
-bool doesTouchDownBoundary(double y)
-{
-    return y <= 0;
-}
-
-void touchingBoundaries()
-{
-    if (doesTouchLeftBoundary(player[0]))
-        blockedSides[LEFT - 1] = true;
-    if (doesTouchRightBoundary(player[0], player[2]))
-        blockedSides[RIGHT - 1] = true;
-    if (doesTouchUpBoundary(player[1], player[3]))
-        blockedSides[UP - 1] = true;
-    if (doesTouchDownBoundary(player[1]))
-    {
-        blockedSides[DOWN - 1] = true;
-        t = 0;
-    }
-}
-
 // TODO: Fix collisions at the front of a platform.
 bool collidesWithTile(double x, double y, double width, double height)
 {
-    int tileRow = (ROWS - 1) - (int)(y / (HEIGHT / ROWS));
-    int tileCol = (int)(x / (WIDTH / COLUMNS));
+    int tileRow = (ROWS - 1) - (int)(y / (TILE_SIZE));
+    int tileCol = (int)(x / (TILE_SIZE));
 
     if (tileRow < 0 || tileRow >= ROWS || tileCol < 0 || tileCol >= COLUMNS)
         return false; // Out of bounds
@@ -146,44 +123,78 @@ bool collidesWithTile(double x, double y, double width, double height)
     return tiles[tileRow][tileCol] == '#';
 }
 
-void updateBlockedSides()
+void setVerticalVelocity(double amount)
 {
-    for (int i = 0; i < 4; i++)
+    velocityY = amount;
+}
+
+void setHorizontalVelocity(double amount)
+{
+    velocityX = amount;
+}
+
+void gameStateUpdate()
+{
+    // ? Store these as macros?
+    double delT = 0.08;
+    double airResistance = 5;
+    double gravity = 40;
+
+    int velocityXDir = velocityX == 0 ? 0 : (velocityX > 0 ? 1 : -1);
+    velocityX += -1 * velocityXDir * airResistance * delT; // Apply air resistance
+    double delX = velocityX * delT;
+    if (player[0] + delX < 0)
     {
-        blockedSides[i] = false; // Reset blocked sides
+        player[0] = 0;
+        velocityX = 0;
     }
-    touchingBoundaries();
-}
-
-bool isBlocked(int side)
-{
-    return blockedSides[side - 1];
-}
-
-void goUp(int amount)
-{
-    if (!isBlocked(UP))
+    else if (player[0] + player[2] + delX > WIDTH)
     {
-        if (doesTouchUpBoundary(player[1] + amount, player[3]))
-        {
-            player[1] = HEIGHT - player[3]; // Prevent going out of bounds
-        }
-        else
-            player[1] += amount;
-        t = 0;
+        player[0] = WIDTH - player[2];
+        velocityX = 0;
+    }
+    else
+    {
+        player[0] += delX;
+    }
+
+    velocityY -= gravity * delT; // Apply gravity
+    double delY = velocityY * delT;
+    if (player[1] + delY < 0)
+    {
+        player[1] = 0;
+        velocityY = 0;
+    }
+    else if (player[1] + player[3] + delY > HEIGHT)
+    {
+        player[1] = HEIGHT - player[3];
+        velocityY = 0;
+    }
+    else
+    {
+        player[1] += delY;
     }
 }
 
-void goDown(int amount)
+// TODO: Check this AI generated slop.
+void checkCollisionWithCoins()
 {
-    if (!isBlocked(DOWN))
+    for (int row = 0; row < ROWS; row++)
     {
-        if (doesTouchDownBoundary(player[1] - amount))
+        for (int col = 0; col < COLUMNS; col++)
         {
-            player[1] = 0; // Prevent going out of bounds
+            if (tiles[row][col] == 'O')
+            {
+                double coinX = col * (TILE_SIZE) + (TILE_SIZE) / 2;
+                double coinY = (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2;
+                if (player[0] < coinX + 10 && player[0] + player[2] > coinX - 10 &&
+                    player[1] < coinY + 10 && player[1] + player[3] > coinY - 10)
+                {
+                    collectedCoins++;
+                    tiles[row][col] = ' ';
+                }
+            }
         }
-        else
-            player[1] -= amount;
     }
 }
 
@@ -191,13 +202,11 @@ void iDraw()
 {
     if (firstDraw)
     {
-        // glutFullScreen();
-
         // Load images
         iLoadImage(&background_image, "assets/images/menu_page_background.png");
         iResizeImage(&background_image, WIDTH, HEIGHT);
         iLoadImage(&tile, "assets/images/tile.png");
-        iResizeImage(&tile, WIDTH / COLUMNS, HEIGHT / ROWS);
+        iResizeImage(&tile, TILE_SIZE, TILE_SIZE);
 
         initializeHoverRectangleYs();
 
@@ -213,65 +222,16 @@ void iDraw()
     iSetColor(255, 255, 255);
     iShowLoadedImage(0, 0, &background_image);
 
-    // Draw tiles
-    for (int row = 0; row < ROWS; row++)
-    {
-        for (int col = 0; col < COLUMNS; col++)
-        {
-            if (tiles[row][col] == '#')
-            {
-                // Tile
-                iShowLoadedImage(col * (WIDTH / COLUMNS), (ROWS - row - 1) * (HEIGHT / ROWS), &tile);
-            }
-            else if (tiles[row][col] == 'O')
-            {
-                // Coin
-                iSetColor(255, 215, 0); // Gold color
-                iFilledCircle(col * (WIDTH / COLUMNS) + (WIDTH / COLUMNS) / 2, (ROWS - row - 1) * (HEIGHT / ROWS) + (HEIGHT / ROWS) / 2, 10, 100);
-            }
-        }
-    }
+    // Draw tiles and coins
+    drawTilesAndCoins();
 
     // Player
     iSetColor(40, 75, 30);
     iFilledRectangle(player[0], player[1], player[2], player[3]);
 
-    updateBlockedSides();
-
-    // Collect coins
-    for (int row = 0; row < ROWS; row++)
-    {
-        for (int col = 0; col < COLUMNS; col++)
-        {
-            if (tiles[row][col] == 'O')
-            {
-                double coinX = col * (WIDTH / COLUMNS) + (WIDTH / COLUMNS) / 2;
-                double coinY = (ROWS - row - 1) * (HEIGHT / ROWS) + (HEIGHT / ROWS) / 2;
-                if (player[0] < coinX + 10 && player[0] + player[2] > coinX - 10 &&
-                    player[1] < coinY + 10 && player[1] + player[3] > coinY - 10)
-                {
-                    collectedCoins++;
-                    tiles[row][col] = ' ';
-                }
-            }
-        }
-    }
-
+    // TODO: Optimize by redrawing the widgets only when they're changed.
+    checkCollisionWithCoins();
     drawCoinCount();
-
-    // Apply gravity effect
-    t++;
-    double gravityDeltaY = 0.03 * (t * 2 - 1); // TODO: Store the 0.03 magic number to somewhere.
-    if (collidesWithTile(player[0], player[1] - gravityDeltaY, player[2], player[3]))
-    {
-        // TODO: Go down until the player is on the tile.
-        t = 0;
-        gravityDeltaY = 0;
-    }
-    else
-    {
-        goDown(gravityDeltaY);
-    }
 
     // * Page rendering
     if (currentPage == MENU_PAGE)
@@ -280,8 +240,8 @@ void iDraw()
     }
     else if (currentPage == GAME_PAGE)
     {
-        // TODO: Add a mechanism to pause the game when going to other pages.
-        // TODO: Add a mechanism to resume the game when coming back to the game page.
+        // TODO: Don't resume every time iDraw() is called.
+        iResumeTimer(gameStateUpdateTimer);
     }
     else if (currentPage == LEVELS_PAGE)
     {
@@ -308,6 +268,29 @@ void drawCoinCount()
     char coinText[50];
     sprintf(coinText, "Coins: %d", collectedCoins);
     iTextAdvanced(WIDTH - 200, HEIGHT - 50, coinText, 0.3, 2.5, GLUT_STROKE_ROMAN);
+}
+
+void drawTilesAndCoins()
+{
+    for (int row = 0; row < ROWS; row++)
+    {
+        for (int col = 0; col < COLUMNS; col++)
+        {
+            if (tiles[row][col] == '#')
+            {
+                // Tile
+                double tileX = col * TILE_SIZE;
+                double tileY = (ROWS - row - 1) * TILE_SIZE;
+                iShowLoadedImage(tileX, tileY, &tile);
+            }
+            else if (tiles[row][col] == 'O')
+            {
+                // Coin
+                iSetColor(255, 215, 0); // Gold color
+                iFilledCircle(col * (TILE_SIZE) + (TILE_SIZE) / 2, (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2, 10, 100);
+            }
+        }
+    }
 }
 
 // * UI Widget: Page function definitions
@@ -374,39 +357,11 @@ void drawOptionsPage()
 void iKeyboard(unsigned char key)
 {
     // TODO: Add enter key handling to go to the hovered page when in the menu page. Also selecting / hovering buttons by the Up and Down arrow keys.
-    updateBlockedSides();
     switch (key)
     {
-    // TODO: Instead of moving a certain amount, implement a intial velocity mechanism as well as friction.
-    // TODO: Try to handle both left and right movement by a single function.
-    case 'w':
-        // TODO: Animate going up.
-        goUp(100);
-        break;
-    case 'a':
-        if (!isBlocked(LEFT))
-        {
-            if (doesTouchLeftBoundary(player[0] - 10))
-            {
-                player[0] = 0; // Prevent going out of bounds
-            }
-            else
-                player[0] -= 25;
-        }
-        break;
-    case 'd':
-        if (!isBlocked(RIGHT))
-        {
-            if (doesTouchRightBoundary(player[0] + 10, player[2]))
-            {
-                player[0] = WIDTH - player[2]; // Prevent going out of bounds
-            }
-            else
-                player[0] += 25;
-        }
-        break;
     case 27: // Escape key
         currentPage = MENU_PAGE;
+        iPauseTimer(gameStateUpdateTimer);
         break;
     default:
         break;
@@ -418,6 +373,21 @@ void iSpecialKeyboard(unsigned char key)
 {
     switch (key)
     {
+    case GLUT_KEY_UP:
+    {
+        setVerticalVelocity(100);
+        break;
+    }
+    case GLUT_KEY_LEFT:
+    {
+        setHorizontalVelocity(-50);
+        break;
+    }
+    case GLUT_KEY_RIGHT:
+    {
+        setHorizontalVelocity(50);
+        break;
+    }
     default:
         break;
     }
@@ -580,6 +550,10 @@ void iMouseDrag(int mx, int my)
 int main(int argc, char *argv[])
 {
     glutInit(&argc, argv); // argc and argv are used for command line arguments.
+
+    gameStateUpdateTimer = iSetTimer(10, gameStateUpdate);
+    iPauseTimer(gameStateUpdateTimer);
+
     iInitialize(WIDTH, HEIGHT, TITLE);
 
     return 0;
