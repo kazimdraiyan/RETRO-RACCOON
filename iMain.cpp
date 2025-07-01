@@ -43,6 +43,14 @@ typedef struct
     double length;
 } Blocker;
 
+typedef struct
+{
+    double x = WIDTH / 9.0;
+    double y = 150;
+    double width = 20;
+    double height = 20;
+} Player;
+
 // * Game UI management variables
 int currentPage = MENU_PAGE;
 int currentLevel = 0;
@@ -71,9 +79,7 @@ bool blockedSides[4] = {false}; // Left, Right, Up, Down // TODO: Find a better 
 double velocityX = 0;
 double velocityY = 0;
 int collectedCoins = 0;
-// TODO: Add Player struct
-// Player represented as an array: {x, y, width, height}
-double player[4] = {WIDTH / 9.0, 150, 20, 20};
+Player player;
 
 // * These functions acts as UI Widgets.
 void drawMenuPage();
@@ -127,8 +133,8 @@ void initializeHoverRectangleYs()
 // TODO: Invert velocity for bouncing.
 void checkCollisionWithTilesAndMoveAccordingly(double delX = 0, double delY = 0)
 {
-    int tileRow = (ROWS - 1) - (int)((player[1] + delY) / TILE_SIZE);
-    int tileCol = (int)((player[0] + delX) / TILE_SIZE);
+    int tileRow = (ROWS - 1) - (int)((player.y + delY) / TILE_SIZE);
+    int tileCol = (int)((player.x + delX) / TILE_SIZE);
 
     if (tileRow < 0 || tileRow >= ROWS || tileCol < 0 || tileCol >= COLUMNS)
     {
@@ -138,10 +144,10 @@ void checkCollisionWithTilesAndMoveAccordingly(double delX = 0, double delY = 0)
     else if (tiles[tileRow][tileCol] == '#' || (tileCol < COLUMNS - 1 && tiles[tileRow][tileCol + 1] == '#'))
     {
         double tileY = (ROWS - tileRow - 1) * TILE_SIZE;
-        if (player[1] + delY < tileY + TILE_SIZE)
+        if (player.y + delY < tileY + TILE_SIZE)
         {
             // Blocked by a tile below.
-            player[1] = tileY + TILE_SIZE;
+            player.y = tileY + TILE_SIZE;
             velocityY = 0;
             return;
         }
@@ -149,16 +155,16 @@ void checkCollisionWithTilesAndMoveAccordingly(double delX = 0, double delY = 0)
     else if (tileRow > 0 && (tiles[tileRow - 1][tileCol] == '#' || (tileCol < COLUMNS - 1 && tiles[tileRow - 1][tileCol + 1] == '#')))
     {
         double tileY = (ROWS - tileRow - 1) * TILE_SIZE;
-        if (player[1] + delY > tileY)
+        if (player.y + delY > tileY)
         {
             // Blocked by a tile above.
-            player[1] = tileY;
+            player.y = tileY;
             velocityY = 0;
             return;
         }
     }
-    player[0] += delX;
-    player[1] += delY;
+    player.x += delX;
+    player.y += delY;
 }
 
 void setVerticalVelocity(double amount)
@@ -173,14 +179,14 @@ void setHorizontalVelocity(double amount)
 
 void moveVerticallyIfPossible(double delY)
 {
-    if (player[1] + delY < 0)
+    if (player.y + delY < 0)
     {
-        player[1] = 0;
+        player.y = 0;
         velocityY = 0;
     }
-    else if (player[1] + player[3] + delY > HEIGHT)
+    else if (player.y + player.height + delY > HEIGHT)
     {
-        player[1] = HEIGHT - player[3];
+        player.y = HEIGHT - player.height;
         velocityY = 0;
     }
     else
@@ -191,14 +197,14 @@ void moveVerticallyIfPossible(double delY)
 
 void moveHorizontallyIfPossible(double delX)
 {
-    if (player[0] + delX < 0)
+    if (player.x + delX < 0)
     {
-        player[0] = 0;
+        player.x = 0;
         velocityX = 0;
     }
-    else if (player[0] + player[2] + delX > WIDTH)
+    else if (player.x + player.width + delX > WIDTH)
     {
-        player[0] = WIDTH - player[2];
+        player.x = WIDTH - player.width;
         velocityX = 0;
     }
     else
@@ -235,8 +241,8 @@ void checkCollisionWithCoins()
             {
                 double coinX = col * (TILE_SIZE) + (TILE_SIZE) / 2;
                 double coinY = (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2;
-                if (player[0] < coinX + 10 && player[0] + player[2] > coinX - 10 &&
-                    player[1] < coinY + 10 && player[1] + player[3] > coinY - 10)
+                if (player.x < coinX + 10 && player.x + player.width > coinX - 10 &&
+                    player.y < coinY + 10 && player.y + player.height > coinY - 10)
                 {
                     collectedCoins++;
                     tiles[row][col] = ' ';
@@ -273,7 +279,7 @@ void iDraw()
 
     // Player
     iSetColor(40, 75, 30);
-    iFilledRectangle(player[0], player[1], player[2], player[3]);
+    iFilledRectangle(player.x, player.y, player.width, player.height);
 
     // TODO: Optimize by redrawing the widgets only when they're changed.
     checkCollisionWithCoins();
@@ -595,8 +601,8 @@ void iMouse(int button, int state, int mx, int my)
     // For debugging:
     // else if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN && currentPage == GAME_PAGE)
     // {
-    //     player[0] = mx;
-    //     player[1] = my;
+    //     player.x = mx;
+    //     player.y = my;
     //     checkCollisionWithTilesAndMoveAccordingly();
     // }
     else
