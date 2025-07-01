@@ -9,6 +9,8 @@
 
 // TODO: Bug: Player moving to the right on its own.
 
+// TODO: Handle keyboard control only if the current page is GAME_PAGE.
+
 #define WIDTH 1280
 #define HEIGHT 720
 #define COLUMNS 64
@@ -54,6 +56,15 @@ Image background_image;
 Image tile;
 char tiles[ROWS][COLUMNS + 1] = {};
 
+// Blocker leftBlockers[500] = {Blocker{0, 0, HEIGHT}};
+// int leftBlockersCount = 1;
+// Blocker rightBlockers[500] = {Blocker{0, WIDTH, HEIGHT}};
+// int rightBlockersCount = 1;
+// Blocker upBlockers[500] = {Blocker{0, HEIGHT, WIDTH}};
+// int upBlockersCount = 1;
+// Blocker downBlockers[500] = {Blocker{0, 0, WIDTH}};
+// int downBlockersCount = 1;
+
 // * Game state variables
 int gameStateUpdateTimer;
 bool blockedSides[4] = {false}; // Left, Right, Up, Down // TODO: Find a better way to handle this.
@@ -62,7 +73,7 @@ double velocityY = 0;
 int collectedCoins = 0;
 // TODO: Add Player struct
 // Player represented as an array: {x, y, width, height}
-double player[4] = {WIDTH / 9.0, 150, 30, 30};
+double player[4] = {WIDTH / 9.0, 150, 20, 20};
 
 // * These functions acts as UI Widgets.
 void drawMenuPage();
@@ -111,16 +122,43 @@ void initializeHoverRectangleYs()
 }
 
 // * Game logic functions
-// TODO: Fix collisions at the front of a platform.
-bool collidesWithTile(double x, double y, double width, double height)
+// TODO: Clean the if-elses.
+// TODO: Add horizontal collision detection.
+// TODO: Invert velocity for bouncing.
+void checkCollisionWithTilesAndMoveAccordingly(double delX = 0, double delY = 0)
 {
-    int tileRow = (ROWS - 1) - (int)(y / (TILE_SIZE));
-    int tileCol = (int)(x / (TILE_SIZE));
+    int tileRow = (ROWS - 1) - (int)((player[1] + delY) / TILE_SIZE);
+    int tileCol = (int)((player[0] + delX) / TILE_SIZE);
 
     if (tileRow < 0 || tileRow >= ROWS || tileCol < 0 || tileCol >= COLUMNS)
-        return false; // Out of bounds
-
-    return tiles[tileRow][tileCol] == '#';
+    {
+        printf("OUT OF BOUNDS\n");
+        return;
+    }
+    else if (tiles[tileRow][tileCol] == '#' || (tileCol < COLUMNS - 1 && tiles[tileRow][tileCol + 1] == '#'))
+    {
+        double tileY = (ROWS - tileRow - 1) * TILE_SIZE;
+        if (player[1] + delY < tileY + TILE_SIZE)
+        {
+            // Blocked by a tile below.
+            player[1] = tileY + TILE_SIZE;
+            velocityY = 0;
+            return;
+        }
+    }
+    else if (tileRow > 0 && (tiles[tileRow - 1][tileCol] == '#' || (tileCol < COLUMNS - 1 && tiles[tileRow - 1][tileCol + 1] == '#')))
+    {
+        double tileY = (ROWS - tileRow - 1) * TILE_SIZE;
+        if (player[1] + delY > tileY)
+        {
+            // Blocked by a tile above.
+            player[1] = tileY;
+            velocityY = 0;
+            return;
+        }
+    }
+    player[0] += delX;
+    player[1] += delY;
 }
 
 void setVerticalVelocity(double amount)
@@ -133,33 +171,8 @@ void setHorizontalVelocity(double amount)
     velocityX = amount;
 }
 
-void gameStateUpdate()
+void moveVerticallyIfPossible(double delY)
 {
-    // ? Store these as macros?
-    double delT = 0.08;
-    double airResistance = 5;
-    double gravity = 40;
-
-    int velocityXDir = velocityX == 0 ? 0 : (velocityX > 0 ? 1 : -1);
-    velocityX += -1 * velocityXDir * airResistance * delT; // Apply air resistance
-    double delX = velocityX * delT;
-    if (player[0] + delX < 0)
-    {
-        player[0] = 0;
-        velocityX = 0;
-    }
-    else if (player[0] + player[2] + delX > WIDTH)
-    {
-        player[0] = WIDTH - player[2];
-        velocityX = 0;
-    }
-    else
-    {
-        player[0] += delX;
-    }
-
-    velocityY -= gravity * delT; // Apply gravity
-    double delY = velocityY * delT;
     if (player[1] + delY < 0)
     {
         player[1] = 0;
@@ -172,8 +185,43 @@ void gameStateUpdate()
     }
     else
     {
-        player[1] += delY;
+        checkCollisionWithTilesAndMoveAccordingly(0, delY);
     }
+}
+
+void moveHorizontallyIfPossible(double delX)
+{
+    if (player[0] + delX < 0)
+    {
+        player[0] = 0;
+        velocityX = 0;
+    }
+    else if (player[0] + player[2] + delX > WIDTH)
+    {
+        player[0] = WIDTH - player[2];
+        velocityX = 0;
+    }
+    else
+    {
+        checkCollisionWithTilesAndMoveAccordingly(delX, 0);
+    }
+}
+
+void gameStateUpdate()
+{
+    // ? Store these as macros?
+    double delT = 0.08;
+    double airResistance = 5;
+    double gravity = 40;
+
+    int velocityXDir = velocityX == 0 ? 0 : (velocityX > 0 ? 1 : -1);
+    velocityX += -1 * velocityXDir * airResistance * delT; // Apply air resistance
+    double delX = velocityX * delT;
+    moveHorizontallyIfPossible(delX);
+
+    velocityY -= gravity * delT; // Apply gravity
+    double delY = velocityY * delT;
+    moveVerticallyIfPossible(delY);
 }
 
 // TODO: Check this AI generated slop.
@@ -212,8 +260,6 @@ void iDraw()
 
         currentLevel = 1;
         loadLevel(currentLevel);
-
-        firstDraw = false;
     }
 
     iClear();
@@ -259,7 +305,31 @@ void iDraw()
     {
         // TODO: Edge case handling.
     }
+
+    firstDraw = false;
 }
+
+// int compareVerticalBlockers(const void *a, const void *b)
+// {
+//     Blocker blockerA = *((Blocker *)a);
+//     Blocker blockerB = *((Blocker *)b);
+//     if (blockerA.x < blockerB.x)
+//         return -1;
+//     else if (blockerA.x > blockerB.x)
+//         return 1;
+//     return 0;
+// }
+
+// int compareHorizontalBlockers(const void *a, const void *b)
+// {
+//     Blocker blockerA = *((Blocker *)a);
+//     Blocker blockerB = *((Blocker *)b);
+//     if (blockerA.y < blockerB.y)
+//         return -1;
+//     else if (blockerA.y > blockerB.y)
+//         return 1;
+//     return 0;
+// }
 
 // * UI Widget: Small widget function definitions
 void drawCoinCount()
@@ -281,6 +351,43 @@ void drawTilesAndCoins()
                 // Tile
                 double tileX = col * TILE_SIZE;
                 double tileY = (ROWS - row - 1) * TILE_SIZE;
+                // if (firstDraw)
+                // {
+                //     // TODO: For horizontally adjacent tiles, merge them into a single blocker.
+                //     // TODO: For vertically adjacent tiles, merge them into a single blocker.
+                //     bool isAdjacentToNext = col < COLUMNS - 1 && tiles[row][col + 1] == '#';
+                //     if (!isAdjacentToNext)
+                //     {
+                //         leftBlockers[leftBlockersCount].x = tileX + TILE_SIZE;
+                //         leftBlockers[leftBlockersCount].y = tileY;
+                //         leftBlockers[leftBlockersCount].length = TILE_SIZE;
+                //         leftBlockersCount++;
+                //     }
+                //     bool isAdjacentToPrevious = col > 0 && tiles[row][col - 1] == '#';
+                //     if (!isAdjacentToPrevious)
+                //     {
+                //         rightBlockers[rightBlockersCount].x = tileX;
+                //         rightBlockers[rightBlockersCount].y = tileY;
+                //         rightBlockers[rightBlockersCount].length = TILE_SIZE;
+                //         rightBlockersCount++;
+                //     }
+                //     bool isAdjacentToAbove = row < ROWS - 1 && tiles[row + 1][col] == '#';
+                //     if (!isAdjacentToAbove)
+                //     {
+                //         upBlockers[upBlockersCount].x = tileX;
+                //         upBlockers[upBlockersCount].y = tileY;
+                //         upBlockers[upBlockersCount].length = TILE_SIZE;
+                //         upBlockersCount++;
+                //     }
+                //     bool isAdjacentToBelow = row > 0 && tiles[row - 1][col] == '#';
+                //     if (!isAdjacentToBelow)
+                //     {
+                //         downBlockers[downBlockersCount].x = tileX;
+                //         downBlockers[downBlockersCount].y = tileY + TILE_SIZE;
+                //         downBlockers[downBlockersCount].length = TILE_SIZE;
+                //         downBlockersCount++;
+                //     }
+                // }
                 iShowLoadedImage(tileX, tileY, &tile);
             }
             else if (tiles[row][col] == 'O')
@@ -291,6 +398,29 @@ void drawTilesAndCoins()
             }
         }
     }
+    // if (firstDraw)
+    // {
+    //     qsort(leftBlockers, leftBlockersCount, sizeof(Blocker), compareVerticalBlockers);
+    //     for (int i = 0; i < leftBlockersCount; i++)
+    //     {
+    //         printf("Left Blocker %d: x = %.2f, y = %.2f, length = %.2f\n", i, leftBlockers[i].x, leftBlockers[i].y, leftBlockers[i].length);
+    //     }
+    //     qsort(rightBlockers, rightBlockersCount, sizeof(Blocker), compareVerticalBlockers);
+    //     for (int i = 0; i < rightBlockersCount; i++)
+    //     {
+    //         printf("Right Blocker %d: x = %.2f, y = %.2f, length = %.2f\n", i, rightBlockers[i].x, rightBlockers[i].y, rightBlockers[i].length);
+    //     }
+    //     qsort(upBlockers, upBlockersCount, sizeof(Blocker), compareHorizontalBlockers);
+    //     for (int i = 0; i < upBlockersCount; i++)
+    //     {
+    //         printf("Up Blocker %d: x = %.2f, y = %.2f, length = %.2f\n", i, upBlockers[i].x, upBlockers[i].y, upBlockers[i].length);
+    //     }
+    //     qsort(downBlockers, downBlockersCount, sizeof(Blocker), compareHorizontalBlockers);
+    //     for (int i = 0; i < downBlockersCount; i++)
+    //     {
+    //         printf("Down Blocker %d: x = %.2f, y = %.2f, length = %.2f\n", i, downBlockers[i].x, downBlockers[i].y, downBlockers[i].length);
+    //     }
+    // }
 }
 
 // * UI Widget: Page function definitions
@@ -462,6 +592,13 @@ void iMouse(int button, int state, int mx, int my)
         collectedCoins = 0;
         loadLevel(currentLevel);
     }
+    // For debugging:
+    // else if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN && currentPage == GAME_PAGE)
+    // {
+    //     player[0] = mx;
+    //     player[1] = my;
+    //     checkCollisionWithTilesAndMoveAccordingly();
+    // }
     else
     {
     }

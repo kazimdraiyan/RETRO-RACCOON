@@ -1,0 +1,6 @@
+{
+  "[plaintext]": {
+    "editor.renderWhitespace": "all",
+    "editor.guides.indentation": false
+  }
+}
