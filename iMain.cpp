@@ -1,5 +1,6 @@
 #include "iGraphics.h"
 
+// TODO: Add player running sprite.
 // TODO: Try to make the game responsive to different screen sizes and full screen.
 // TODO: Divide the code into multiple files.
 // TODO: Try to use object oriented programming.
@@ -49,6 +50,7 @@ typedef struct
     double y = 150;
     double width = 20;
     double height = 20;
+    Direction direction = RIGHT;
 } Player;
 
 // * Game UI management variables
@@ -65,6 +67,11 @@ Image tile;
 char tiles[ROWS][COLUMNS + 1] = {};
 Image coinFrames[5];
 Sprite coinSprite;
+Image playerIdleFrames[4];
+Sprite playerIdleSprite;
+// TODO: Check whether jumping needs another set of frames at the bottom.
+Image playerJumpFrames[5];
+Sprite playerJumpSprite;
 
 // Blocker leftBlockers[500] = {Blocker{0, 0, HEIGHT}};
 // int leftBlockersCount = 1;
@@ -83,6 +90,9 @@ double velocityX = 0;
 double velocityY = 0;
 int collectedCoins = 0;
 Player player;
+// TODO: Include these in the player struct.
+bool isJumping = false; // isJumping tells whether the player just jumped or not.
+int jumpAnimationFrame = 0;
 
 // * These functions acts as UI Widgets.
 void drawMenuPage();
@@ -134,6 +144,15 @@ void loadAssets()
     iLoadFramesFromFolder(coinFrames, "assets/sprites/coin/");
     iInitSprite(&coinSprite);
     iChangeSpriteFrames(&coinSprite, coinFrames, 5);
+
+    // Load player sprite
+    iLoadFramesFromFolder(playerIdleFrames, "assets/sprites/player/idle/");
+    iInitSprite(&playerIdleSprite);
+    iChangeSpriteFrames(&playerIdleSprite, playerIdleFrames, 4);
+
+    iLoadFramesFromFolder(playerJumpFrames, "assets/sprites/player/jump/");
+    iInitSprite(&playerJumpSprite);
+    iChangeSpriteFrames(&playerJumpSprite, playerJumpFrames, 5);
 }
 
 void initializeHoverRectangleYs()
@@ -247,9 +266,25 @@ void gameStateUpdate()
     moveVerticallyIfPossible(delY);
 }
 
-void animateCoin()
+void animateSprites()
 {
     iAnimateSprite(&coinSprite);
+    // TODO: Recheck the logic.
+    if (velocityY == 0)
+    {
+        // If the player's jump animation is over, but still in air (velocityY != 0), then nothing is animated.
+        iAnimateSprite(&playerIdleSprite);
+    }
+    else if (isJumping)
+    {
+        iAnimateSprite(&playerJumpSprite);
+        jumpAnimationFrame++;
+        if (jumpAnimationFrame >= 5)
+        {
+            isJumping = false;
+            jumpAnimationFrame = 0;
+        }
+    }
 }
 
 // TODO: Check this AI generated slop.
@@ -297,8 +332,16 @@ void iDraw()
     drawTilesAndCoins();
 
     // Player
-    iSetColor(40, 75, 30);
-    iFilledRectangle(player.x, player.y, player.width, player.height);
+    if (velocityY > 0)
+    {
+        iSetSpritePosition(&playerJumpSprite, player.x, player.y);
+        iShowSprite(&playerJumpSprite);
+    }
+    else
+    {
+        iSetSpritePosition(&playerIdleSprite, player.x, player.y);
+        iShowSprite(&playerIdleSprite);
+    }
 
     // TODO: Optimize by redrawing the widgets only when they're changed.
     checkCollisionWithCoins();
@@ -527,21 +570,36 @@ void iKeyboard(unsigned char key)
 // GLUT_KEY_F1, GLUT_KEY_F2, GLUT_KEY_F3, GLUT_KEY_F4, GLUT_KEY_F5, GLUT_KEY_F6, GLUT_KEY_F7, GLUT_KEY_F8, GLUT_KEY_F9, GLUT_KEY_F10, GLUT_KEY_F11, GLUT_KEY_F12, GLUT_KEY_LEFT, GLUT_KEY_UP, GLUT_KEY_RIGHT, GLUT_KEY_DOWN, GLUT_KEY_PAGE_UP, GLUT_KEY_PAGE_DOWN, GLUT_KEY_HOME, GLUT_KEY_END, GLUT_KEY_INSERT
 void iSpecialKeyboard(unsigned char key)
 {
+    // TODO: Extract functions?
     switch (key)
     {
     case GLUT_KEY_UP:
     {
         setVerticalVelocity(100);
+        isJumping = true;
+        jumpAnimationFrame = 0;
         break;
     }
     case GLUT_KEY_LEFT:
     {
         setHorizontalVelocity(-50);
+        if (player.direction == RIGHT)
+        {
+            iMirrorSprite(&playerIdleSprite, HORIZONTAL);
+            iMirrorSprite(&playerJumpSprite, HORIZONTAL);
+            player.direction = LEFT;
+        }
         break;
     }
     case GLUT_KEY_RIGHT:
     {
         setHorizontalVelocity(50);
+        if (player.direction == LEFT)
+        {
+            iMirrorSprite(&playerIdleSprite, HORIZONTAL);
+            iMirrorSprite(&playerJumpSprite, HORIZONTAL);
+            player.direction = RIGHT;
+        }
         break;
     }
     default:
@@ -715,7 +773,7 @@ int main(int argc, char *argv[])
     glutInit(&argc, argv); // argc and argv are used for command line arguments.
 
     gameStateUpdateTimer = iSetTimer(10, gameStateUpdate);
-    coinAnimationTimer = iSetTimer(100, animateCoin);
+    coinAnimationTimer = iSetTimer(100, animateSprites);
     iPauseTimer(gameStateUpdateTimer);
 
     iInitialize(WIDTH, HEIGHT, TITLE);
