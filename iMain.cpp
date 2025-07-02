@@ -63,6 +63,8 @@ bool firstDraw = true;
 Image background_image;
 Image tile;
 char tiles[ROWS][COLUMNS + 1] = {};
+Image coinFrames[5];
+Sprite coinSprite;
 
 // Blocker leftBlockers[500] = {Blocker{0, 0, HEIGHT}};
 // int leftBlockersCount = 1;
@@ -75,6 +77,7 @@ char tiles[ROWS][COLUMNS + 1] = {};
 
 // * Game state variables
 int gameStateUpdateTimer;
+int coinAnimationTimer;
 bool blockedSides[4] = {false}; // Left, Right, Up, Down // TODO: Find a better way to handle this.
 double velocityX = 0;
 double velocityY = 0;
@@ -117,6 +120,20 @@ void loadLevel(int level)
         printf("Failed to load level.");
     }
     fclose(file_pointer);
+}
+
+void loadAssets()
+{
+    // Load images
+    iLoadImage(&background_image, "assets/images/menu_page_background.png");
+    iResizeImage(&background_image, WIDTH, HEIGHT);
+    iLoadImage(&tile, "assets/images/tile.png");
+    iResizeImage(&tile, TILE_SIZE, TILE_SIZE);
+
+    // Load coin sprite
+    iLoadFramesFromFolder(coinFrames, "assets/sprites/coin/");
+    iInitSprite(&coinSprite);
+    iChangeSpriteFrames(&coinSprite, coinFrames, 5);
 }
 
 void initializeHoverRectangleYs()
@@ -230,6 +247,11 @@ void gameStateUpdate()
     moveVerticallyIfPossible(delY);
 }
 
+void animateCoin()
+{
+    iAnimateSprite(&coinSprite);
+}
+
 // TODO: Check this AI generated slop.
 void checkCollisionWithCoins()
 {
@@ -239,6 +261,7 @@ void checkCollisionWithCoins()
         {
             if (tiles[row][col] == 'O')
             {
+                // ? Corner problem?
                 double coinX = col * (TILE_SIZE) + (TILE_SIZE) / 2;
                 double coinY = (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2;
                 if (player.x < coinX + 10 && player.x + player.width > coinX - 10 &&
@@ -256,11 +279,7 @@ void iDraw()
 {
     if (firstDraw)
     {
-        // Load images
-        iLoadImage(&background_image, "assets/images/menu_page_background.png");
-        iResizeImage(&background_image, WIDTH, HEIGHT);
-        iLoadImage(&tile, "assets/images/tile.png");
-        iResizeImage(&tile, TILE_SIZE, TILE_SIZE);
+        loadAssets();
 
         initializeHoverRectangleYs();
 
@@ -399,8 +418,9 @@ void drawTilesAndCoins()
             else if (tiles[row][col] == 'O')
             {
                 // Coin
-                iSetColor(255, 215, 0); // Gold color
-                iFilledCircle(col * (TILE_SIZE) + (TILE_SIZE) / 2, (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2, 10, 100);
+                // TODO: Resizing makes the coin sprite blurry.
+                iSetSpritePosition(&coinSprite, col * (TILE_SIZE) + (TILE_SIZE) / 2, (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2);
+                iShowSprite(&coinSprite);
             }
         }
     }
@@ -695,6 +715,7 @@ int main(int argc, char *argv[])
     glutInit(&argc, argv); // argc and argv are used for command line arguments.
 
     gameStateUpdateTimer = iSetTimer(10, gameStateUpdate);
+    coinAnimationTimer = iSetTimer(100, animateCoin);
     iPauseTimer(gameStateUpdateTimer);
 
     iInitialize(WIDTH, HEIGHT, TITLE);
