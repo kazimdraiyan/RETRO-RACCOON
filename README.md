@@ -42,12 +42,8 @@ This project is a classic 2D platformer game where you control a character to co
 
 ## Screenshots
 
-> _Add screenshots of your game here!_
-
-```md
 ![Menu Screenshot](assets/screenshots/menu.png)
 ![Gameplay Screenshot](assets/screenshots/gameplay.png)
-```
 
 ---
 
