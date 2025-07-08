@@ -15,9 +15,13 @@ set "PATH=%BASE_DIR%;%BASE_DIR%\bin;%PATH%"
 
 echo Using g++ from: %BASE_DIR%
 
+:: Create obj directory if it doesn't exist
+if not exist "obj" (
+    mkdir obj
+)
 :: Compile the source file to an object file (with irrKlang include path)
 
-g++.exe -Wall -fexceptions -g -I. -IOpenGL\include -IOpenGL\include\SDL2 -c "%SOURCE_FILE%" -o obj\opengl.o
+g++.exe -w -fexceptions -g -I. -IOpenGL\\include -IOpenGL\\include\\SDL2 -IOpenGL\\include\\Freetype -c "%SOURCE_FILE%" -o obj\\opengl.o
 
 if %ERRORLEVEL% neq 0 (
    echo Compilation failed.
@@ -26,7 +30,7 @@ if %ERRORLEVEL% neq 0 (
 
 echo Compiling %SOURCE_FILE% to object file...
 
-g++.exe -static-libgcc -static-libstdc++ -L.\OpenGL\lib -o bin\opengl.exe obj\opengl.o -lmingw32 -lSDL2main -lSDL2 -lSDL2_mixer -lOPENGL32 -lfreeglut -lwinmm
+g++.exe -static-libgcc -static-libstdc++ -L.\\OpenGL\\lib -o bin\\opengl.exe obj\\opengl.o -lmingw32 -lSDL2main -lSDL2 -lSDL2_mixer -lOPENGL32 -lfreeglut -lwinmm -lfreetype
 
 if %ERRORLEVEL% neq 0 (
     echo Linking failed.
@@ -35,8 +39,15 @@ if %ERRORLEVEL% neq 0 (
 
 echo Linking %SOURCE_FILE% to executable...
 
-
 echo Finished building.
 
-bin\opengl.exe
-endlocal
+set "OUTPUT_EXE=opengl.exe"
+:: Run the executable
+echo Running bin\%OUTPUT_EXE%...
+bin\%OUTPUT_EXE%
+
+:: Check for runtime errors
+if %ERRORLEVEL% neq 0 (
+    echo Error occurred while running %OUTPUT_EXE% ^(exit code: %ERRORLEVEL%^)
+    exit /b %ERRORLEVEL%
+)

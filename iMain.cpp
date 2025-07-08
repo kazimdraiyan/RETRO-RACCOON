@@ -553,7 +553,7 @@ void drawOptionsPage()
 }
 
 // * Keyboard functions
-void iKeyboard(unsigned char key)
+void iKeyboard(unsigned char key, int state)
 {
     // TODO: Add enter key handling to go to the hovered page when in the menu page. Also selecting / hovering buttons by the Up and Down arrow keys.
     switch (key)
@@ -568,7 +568,7 @@ void iKeyboard(unsigned char key)
 }
 
 // GLUT_KEY_F1, GLUT_KEY_F2, GLUT_KEY_F3, GLUT_KEY_F4, GLUT_KEY_F5, GLUT_KEY_F6, GLUT_KEY_F7, GLUT_KEY_F8, GLUT_KEY_F9, GLUT_KEY_F10, GLUT_KEY_F11, GLUT_KEY_F12, GLUT_KEY_LEFT, GLUT_KEY_UP, GLUT_KEY_RIGHT, GLUT_KEY_DOWN, GLUT_KEY_PAGE_UP, GLUT_KEY_PAGE_DOWN, GLUT_KEY_HOME, GLUT_KEY_END, GLUT_KEY_INSERT
-void iSpecialKeyboard(unsigned char key)
+void iSpecialKeyboard(unsigned char key, int state)
 {
     // TODO: Extract functions?
     switch (key)
@@ -638,7 +638,7 @@ void iMouse(int button, int state, int mx, int my)
         else if (my >= hoverRectangleYs[4] && my <= hoverRectangleYs[4] + hoverRectangleHeight)
         {
             printf("Exit button clicked\n");
-            exit(0);
+            iCloseWindow();
         }
     }
     else if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN && currentPage == LEVELS_PAGE)
@@ -776,7 +776,7 @@ int main(int argc, char *argv[])
     coinAnimationTimer = iSetTimer(100, animateSprites);
     iPauseTimer(gameStateUpdateTimer);
 
-    iInitialize(WIDTH, HEIGHT, TITLE);
+    iOpenWindow(WIDTH, HEIGHT, TITLE);
 
     return 0;
 }
