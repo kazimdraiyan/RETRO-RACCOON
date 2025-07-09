@@ -14,8 +14,8 @@
 
 #define WIDTH 1280
 #define HEIGHT 720
-#define COLUMNS 64
-#define ROWS 36
+#define COLUMNS 32
+#define ROWS 18
 #define TITLE "Platformer Game"
 #define TILE_SIZE (WIDTH / COLUMNS)
 
@@ -34,36 +34,61 @@ enum Page
     GAME_PAGE,
     LEVELS_PAGE,
     HIGH_SCORES_PAGE,
-    OPTIONS_PAGE
+    OPTIONS_PAGE,
+    GAME_OVER_PAGE,
+    WIN_PAGE
 };
 
-typedef struct
+enum TileType
 {
-    double x;
-    double y;
-    double length;
-} Blocker;
+    TILE_TOP,
+    TILE_BOTTOM,
+    TILE_LEFT,
+    TILE_RIGHT,
+    TILE_TOP_LEFT,
+    TILE_TOP_RIGHT,
+    TILE_BOTTOM_LEFT,
+    TILE_BOTTOM_RIGHT,
+    TILE
+};
+
+// typedef struct
+// {
+//     double x;
+//     double y;
+//     double length;
+// } Blocker;
 
 typedef struct
 {
-    double x = WIDTH / 9.0;
+    double x = 200;
     double y = 150;
-    double width = 20;
-    double height = 20;
+    double width = TILE_SIZE;
+    double height = TILE_SIZE;
     Direction direction = RIGHT;
 } Player;
 
 // * Game UI management variables
 int currentPage = MENU_PAGE;
-int currentLevel = 0;
+int currentLevel = 1;
 int hoverRectangleYs[5] = {HEIGHT / 2 + 40};
 int hoverRectangleY = -1;
 int hoverRectangleHeight = 50;
 bool firstDraw = true;
+char scoreText[50];
 
 // * Asset management variables
 Image background_image;
-Image tile;
+Image tileBrownTop;
+Image tileBrownBottom;
+Image tileBrownLeft;
+Image tileBrownRight;
+Image tileBrownTopLeft;
+Image tileBrownTopRight;
+Image tileBrownBottomLeft;
+Image tileBrownBottomRight;
+Image tileBrown;
+
 char tiles[ROWS][COLUMNS + 1] = {};
 Image coinFrames[5];
 Sprite coinSprite;
@@ -72,15 +97,6 @@ Sprite playerIdleSprite;
 // TODO: Check whether jumping needs another set of frames at the bottom.
 Image playerJumpFrames[5];
 Sprite playerJumpSprite;
-
-// Blocker leftBlockers[500] = {Blocker{0, 0, HEIGHT}};
-// int leftBlockersCount = 1;
-// Blocker rightBlockers[500] = {Blocker{0, WIDTH, HEIGHT}};
-// int rightBlockersCount = 1;
-// Blocker upBlockers[500] = {Blocker{0, HEIGHT, WIDTH}};
-// int upBlockersCount = 1;
-// Blocker downBlockers[500] = {Blocker{0, 0, WIDTH}};
-// int downBlockersCount = 1;
 
 // * Game state variables
 int gameStateUpdateTimer;
@@ -92,6 +108,7 @@ int collectedCoins = 0;
 Player player;
 // TODO: Include these in the player struct.
 bool isJumping = false; // isJumping tells whether the player just jumped or not.
+bool isOnAir = false;
 int jumpAnimationFrame = 0;
 
 // * These functions acts as UI Widgets.
@@ -99,6 +116,8 @@ void drawMenuPage();
 void drawLevelsPage();
 void drawHighScoresPage();
 void drawOptionsPage();
+void drawWinPage();
+void drawGameOverPage();
 
 void drawCoinCount();
 void drawTilesAndCoins();
@@ -137,22 +156,43 @@ void loadAssets()
     // Load images
     iLoadImage(&background_image, "assets/images/menu_page_background.png");
     iResizeImage(&background_image, WIDTH, HEIGHT);
-    iLoadImage(&tile, "assets/images/tile.png");
-    iResizeImage(&tile, TILE_SIZE, TILE_SIZE);
+
+    // Load tiles
+    iLoadImage(&tileBrownTop, "assets/images/tiles/tile_b_t.png");
+    iResizeImage(&tileBrownTop, TILE_SIZE, TILE_SIZE);
+    iLoadImage(&tileBrownBottom, "assets/images/tiles/tile_b_b.png");
+    iResizeImage(&tileBrownBottom, TILE_SIZE, TILE_SIZE);
+    iLoadImage(&tileBrownLeft, "assets/images/tiles/tile_b_l.png");
+    iResizeImage(&tileBrownLeft, TILE_SIZE, TILE_SIZE);
+    iLoadImage(&tileBrownRight, "assets/images/tiles/tile_b_r.png");
+    iResizeImage(&tileBrownRight, TILE_SIZE, TILE_SIZE);
+    iLoadImage(&tileBrownTopLeft, "assets/images/tiles/tile_b_tl.png");
+    iResizeImage(&tileBrownTopLeft, TILE_SIZE, TILE_SIZE);
+    iLoadImage(&tileBrownTopRight, "assets/images/tiles/tile_b_tr.png");
+    iResizeImage(&tileBrownTopRight, TILE_SIZE, TILE_SIZE);
+    iLoadImage(&tileBrownBottomLeft, "assets/images/tiles/tile_b_bl.png");
+    iResizeImage(&tileBrownBottomLeft, TILE_SIZE, TILE_SIZE);
+    iLoadImage(&tileBrownBottomRight, "assets/images/tiles/tile_b_br.png");
+    iResizeImage(&tileBrownBottomRight, TILE_SIZE, TILE_SIZE);
+    iLoadImage(&tileBrown, "assets/images/tiles/tile_b.png");
+    iResizeImage(&tileBrown, TILE_SIZE, TILE_SIZE);
 
     // Load coin sprite
     iLoadFramesFromFolder(coinFrames, "assets/sprites/coin/");
     iInitSprite(&coinSprite);
     iChangeSpriteFrames(&coinSprite, coinFrames, 5);
+    iResizeSprite(&coinSprite, (int)(TILE_SIZE / 1.5), (int)(TILE_SIZE / 1.5));
 
     // Load player sprite
     iLoadFramesFromFolder(playerIdleFrames, "assets/sprites/player/idle/");
     iInitSprite(&playerIdleSprite);
     iChangeSpriteFrames(&playerIdleSprite, playerIdleFrames, 4);
+    iResizeSprite(&playerIdleSprite, TILE_SIZE, TILE_SIZE);
 
     iLoadFramesFromFolder(playerJumpFrames, "assets/sprites/player/jump/");
     iInitSprite(&playerJumpSprite);
     iChangeSpriteFrames(&playerJumpSprite, playerJumpFrames, 5);
+    iResizeSprite(&playerJumpSprite, TILE_SIZE, TILE_SIZE);
 }
 
 void initializeHoverRectangleYs()
@@ -161,6 +201,24 @@ void initializeHoverRectangleYs()
     {
         hoverRectangleYs[i] = hoverRectangleYs[i - 1] - hoverRectangleHeight;
     }
+}
+
+void resetGame()
+{
+    iPauseTimer(gameStateUpdateTimer);
+    iPauseTimer(coinAnimationTimer);
+    player.x = 200;
+    player.y = 150;
+    player.direction = RIGHT;
+    velocityX = 0;
+    velocityY = 0;
+    isOnAir = false;
+    isJumping = false;
+    jumpAnimationFrame = 0;
+    firstDraw = true;
+
+    sprintf(scoreText, "Score: %d", collectedCoins);
+    collectedCoins = 0;
 }
 
 // * Game logic functions
@@ -182,10 +240,27 @@ void checkCollisionWithTilesAndMoveAccordingly(double delX = 0, double delY = 0)
         double tileY = (ROWS - tileRow - 1) * TILE_SIZE;
         if (player.y + delY < tileY + TILE_SIZE)
         {
+            // TODO: Clean this mess
+            // printf("%d\n", (tileCol + 1) * TILE_SIZE);
+            // printf("%f\n", (player.x));
             // Blocked by a tile below.
-            player.y = tileY + TILE_SIZE;
-            velocityY = 0;
-            return;
+            if (tiles[tileRow][tileCol] != '#' && (tileCol + 1) * TILE_SIZE - (player.x + delX + player.width) < 0.5)
+            {
+                player.x = tileCol * TILE_SIZE;
+                velocityX = 0;
+            }
+            else if (tiles[tileRow][tileCol + 1] != '#' && player.x + delX - (tileCol + 1) * TILE_SIZE < 0.5)
+            {
+                player.x = (tileCol + 1) * TILE_SIZE;
+                velocityX = 0;
+            }
+            else
+            {
+                player.y = tileY + TILE_SIZE;
+                velocityY = 0;
+                isOnAir = false;
+                return;
+            }
         }
     }
     else if (tileRow > 0 && (tiles[tileRow - 1][tileCol] == '#' || (tileCol < COLUMNS - 1 && tiles[tileRow - 1][tileCol + 1] == '#')))
@@ -219,11 +294,13 @@ void moveVerticallyIfPossible(double delY)
     {
         player.y = 0;
         velocityY = 0;
+        isOnAir = false;
     }
     else if (player.y + player.height + delY > HEIGHT)
     {
         player.y = HEIGHT - player.height;
         velocityY = 0;
+        isOnAir = false;
     }
     else
     {
@@ -253,17 +330,38 @@ void gameStateUpdate()
 {
     // ? Store these as macros?
     double delT = 0.08;
-    double airResistance = 5;
+    double horizontalResistance;
+    if (isOnAir)
+    {
+        horizontalResistance = 15; // Air resistance
+    }
+    else
+    {
+        horizontalResistance = 22; // Friction
+    }
     double gravity = 40;
 
     int velocityXDir = velocityX == 0 ? 0 : (velocityX > 0 ? 1 : -1);
-    velocityX += -1 * velocityXDir * airResistance * delT; // Apply air resistance
+    velocityX += -1 * velocityXDir * horizontalResistance * delT; // Apply air resistance
     double delX = velocityX * delT;
     moveHorizontallyIfPossible(delX);
 
     velocityY -= gravity * delT; // Apply gravity
     double delY = velocityY * delT;
     moveVerticallyIfPossible(delY);
+
+    if (player.y <= 0)
+    {
+        resetGame();
+        currentPage = GAME_OVER_PAGE;
+    }
+    if (player.x + player.width > WIDTH)
+    {
+        resetGame();
+        currentPage = WIN_PAGE;
+        if (currentLevel < 5)
+        currentLevel++;
+    }
 }
 
 void animateSprites()
@@ -287,7 +385,7 @@ void animateSprites()
     }
 }
 
-// TODO: Check this AI generated slop.
+// TODO: Revise this function.
 void checkCollisionWithCoins()
 {
     for (int row = 0; row < ROWS; row++)
@@ -318,7 +416,6 @@ void iDraw()
 
         initializeHoverRectangleYs();
 
-        currentLevel = 1;
         loadLevel(currentLevel);
     }
 
@@ -356,6 +453,7 @@ void iDraw()
     {
         // TODO: Don't resume every time iDraw() is called.
         iResumeTimer(gameStateUpdateTimer);
+        iResumeTimer(coinAnimationTimer);
     }
     else if (currentPage == LEVELS_PAGE)
     {
@@ -369,6 +467,14 @@ void iDraw()
     {
         drawOptionsPage();
     }
+    else if (currentPage == GAME_OVER_PAGE)
+    {
+        drawGameOverPage();
+    }
+    else if (currentPage == WIN_PAGE)
+    {
+        drawWinPage();
+    }
     else
     {
         // TODO: Edge case handling.
@@ -377,35 +483,14 @@ void iDraw()
     firstDraw = false;
 }
 
-// int compareVerticalBlockers(const void *a, const void *b)
-// {
-//     Blocker blockerA = *((Blocker *)a);
-//     Blocker blockerB = *((Blocker *)b);
-//     if (blockerA.x < blockerB.x)
-//         return -1;
-//     else if (blockerA.x > blockerB.x)
-//         return 1;
-//     return 0;
-// }
-
-// int compareHorizontalBlockers(const void *a, const void *b)
-// {
-//     Blocker blockerA = *((Blocker *)a);
-//     Blocker blockerB = *((Blocker *)b);
-//     if (blockerA.y < blockerB.y)
-//         return -1;
-//     else if (blockerA.y > blockerB.y)
-//         return 1;
-//     return 0;
-// }
-
 // * UI Widget: Small widget function definitions
 void drawCoinCount()
 {
     iSetColor(0, 0, 0);
-    char coinText[50];
-    sprintf(coinText, "Coins: %d", collectedCoins);
-    iTextAdvanced(WIDTH - 200, HEIGHT - 50, coinText, 0.3, 2.5, GLUT_STROKE_ROMAN);
+    if (currentPage == GAME_PAGE) {
+        sprintf(scoreText, "Score: %d", collectedCoins);
+    }
+    iTextAdvanced(WIDTH - 200, HEIGHT - 50, scoreText, 0.3, 2.5, GLUT_STROKE_ROMAN);
 }
 
 void drawTilesAndCoins()
@@ -419,77 +504,70 @@ void drawTilesAndCoins()
                 // Tile
                 double tileX = col * TILE_SIZE;
                 double tileY = (ROWS - row - 1) * TILE_SIZE;
-                // if (firstDraw)
-                // {
-                //     // TODO: For horizontally adjacent tiles, merge them into a single blocker.
-                //     // TODO: For vertically adjacent tiles, merge them into a single blocker.
-                //     bool isAdjacentToNext = col < COLUMNS - 1 && tiles[row][col + 1] == '#';
-                //     if (!isAdjacentToNext)
-                //     {
-                //         leftBlockers[leftBlockersCount].x = tileX + TILE_SIZE;
-                //         leftBlockers[leftBlockersCount].y = tileY;
-                //         leftBlockers[leftBlockersCount].length = TILE_SIZE;
-                //         leftBlockersCount++;
-                //     }
-                //     bool isAdjacentToPrevious = col > 0 && tiles[row][col - 1] == '#';
-                //     if (!isAdjacentToPrevious)
-                //     {
-                //         rightBlockers[rightBlockersCount].x = tileX;
-                //         rightBlockers[rightBlockersCount].y = tileY;
-                //         rightBlockers[rightBlockersCount].length = TILE_SIZE;
-                //         rightBlockersCount++;
-                //     }
-                //     bool isAdjacentToAbove = row < ROWS - 1 && tiles[row + 1][col] == '#';
-                //     if (!isAdjacentToAbove)
-                //     {
-                //         upBlockers[upBlockersCount].x = tileX;
-                //         upBlockers[upBlockersCount].y = tileY;
-                //         upBlockers[upBlockersCount].length = TILE_SIZE;
-                //         upBlockersCount++;
-                //     }
-                //     bool isAdjacentToBelow = row > 0 && tiles[row - 1][col] == '#';
-                //     if (!isAdjacentToBelow)
-                //     {
-                //         downBlockers[downBlockersCount].x = tileX;
-                //         downBlockers[downBlockersCount].y = tileY + TILE_SIZE;
-                //         downBlockers[downBlockersCount].length = TILE_SIZE;
-                //         downBlockersCount++;
-                //     }
-                // }
-                iShowLoadedImage(tileX, tileY, &tile);
+                TileType tileType;
+                if (row == 0 || tiles[row - 1][col] != '#')
+                {
+                    if (col == 0 || tiles[row][col - 1] != '#')
+                    {
+                        tileType = TILE_TOP_LEFT;
+                        iShowLoadedImage(tileX, tileY, &tileBrownTopLeft);
+                    }
+                    else if (col == COLUMNS - 1 || tiles[row][col + 1] != '#')
+                    {
+                        tileType = TILE_TOP_RIGHT;
+                        iShowLoadedImage(tileX, tileY, &tileBrownTopRight);
+                    }
+                    else
+                    {
+                        tileType = TILE_TOP;
+                        iShowLoadedImage(tileX, tileY, &tileBrownTop);
+                    }
+                }
+                else if (row == ROWS - 1 || tiles[row + 1][col] != '#')
+                {
+                    if (col == 0 || tiles[row][col - 1] != '#')
+                    {
+                        tileType = TILE_BOTTOM_LEFT;
+                        iShowLoadedImage(tileX, tileY, &tileBrownBottomLeft);
+                    }
+                    else if (col == COLUMNS - 1 || tiles[row][col + 1] != '#')
+                    {
+                        tileType = TILE_BOTTOM_RIGHT;
+                        iShowLoadedImage(tileX, tileY, &tileBrownBottomRight);
+                    }
+                    else
+                    {
+                        tileType = TILE_BOTTOM;
+                        iShowLoadedImage(tileX, tileY, &tileBrownBottom);
+                    }
+                }
+                else if (col == 0 || tiles[row][col - 1] != '#')
+                {
+                    tileType = TILE_LEFT;
+                    iShowLoadedImage(tileX, tileY, &tileBrownLeft);
+                }
+                else if (col == COLUMNS - 1 || tiles[row][col + 1] != '#')
+                {
+                    tileType = TILE_RIGHT;
+                    iShowLoadedImage(tileX, tileY, &tileBrownRight);
+                }
+                else
+                {
+                    tileType = TILE;
+                    iShowLoadedImage(tileX, tileY, &tileBrown);
+                }
+                // iShowLoadedImage(tileX, tileY, &tile);
             }
             else if (tiles[row][col] == 'O')
             {
                 // Coin
                 // TODO: Resizing makes the coin sprite blurry.
+                // iScaleSprite(&coinSprite, 0.1);
                 iSetSpritePosition(&coinSprite, col * (TILE_SIZE) + (TILE_SIZE) / 2, (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2);
                 iShowSprite(&coinSprite);
             }
         }
     }
-    // if (firstDraw)
-    // {
-    //     qsort(leftBlockers, leftBlockersCount, sizeof(Blocker), compareVerticalBlockers);
-    //     for (int i = 0; i < leftBlockersCount; i++)
-    //     {
-    //         printf("Left Blocker %d: x = %.2f, y = %.2f, length = %.2f\n", i, leftBlockers[i].x, leftBlockers[i].y, leftBlockers[i].length);
-    //     }
-    //     qsort(rightBlockers, rightBlockersCount, sizeof(Blocker), compareVerticalBlockers);
-    //     for (int i = 0; i < rightBlockersCount; i++)
-    //     {
-    //         printf("Right Blocker %d: x = %.2f, y = %.2f, length = %.2f\n", i, rightBlockers[i].x, rightBlockers[i].y, rightBlockers[i].length);
-    //     }
-    //     qsort(upBlockers, upBlockersCount, sizeof(Blocker), compareHorizontalBlockers);
-    //     for (int i = 0; i < upBlockersCount; i++)
-    //     {
-    //         printf("Up Blocker %d: x = %.2f, y = %.2f, length = %.2f\n", i, upBlockers[i].x, upBlockers[i].y, upBlockers[i].length);
-    //     }
-    //     qsort(downBlockers, downBlockersCount, sizeof(Blocker), compareHorizontalBlockers);
-    //     for (int i = 0; i < downBlockersCount; i++)
-    //     {
-    //         printf("Down Blocker %d: x = %.2f, y = %.2f, length = %.2f\n", i, downBlockers[i].x, downBlockers[i].y, downBlockers[i].length);
-    //     }
-    // }
 }
 
 // * UI Widget: Page function definitions
@@ -552,6 +630,31 @@ void drawOptionsPage()
     // TODO: Implement options page.
 }
 
+void drawGameOverPage()
+{
+    iClear();
+
+    iShowLoadedImage(0, 0, &background_image);
+
+    iSetColor(0, 0, 0);
+    iTextAdvanced(WIDTH / 2 - 180, HEIGHT / 2 + 50, "Game Over", 0.5, 5.0, GLUT_STROKE_ROMAN);
+    iTextAdvanced(WIDTH / 2 - 90, HEIGHT / 2 - 50, scoreText, 0.3, 2.5, GLUT_STROKE_ROMAN);
+}
+
+void drawWinPage()
+{
+    iClear();
+
+    iShowLoadedImage(0, 0, &background_image);
+
+    char levelText[50];
+    sprintf(levelText, "Level %d Completed", currentLevel - 1);
+
+    iSetColor(0, 0, 0);
+    iTextAdvanced(WIDTH / 2 - 280, HEIGHT / 2 + 50, levelText, 0.5, 5.0, GLUT_STROKE_ROMAN);
+    iTextAdvanced(WIDTH / 2 - 90, HEIGHT / 2 - 50, scoreText, 0.3, 2.5, GLUT_STROKE_ROMAN);
+}
+
 // * Keyboard functions
 void iKeyboard(unsigned char key, int state)
 {
@@ -571,18 +674,23 @@ void iKeyboard(unsigned char key, int state)
 void iSpecialKeyboard(unsigned char key, int state)
 {
     // TODO: Extract functions?
+    if (currentPage != GAME_PAGE)
+    {
+        return;
+    }
     switch (key)
     {
     case GLUT_KEY_UP:
     {
         setVerticalVelocity(100);
         isJumping = true;
+        isOnAir = true;
         jumpAnimationFrame = 0;
         break;
     }
     case GLUT_KEY_LEFT:
     {
-        setHorizontalVelocity(-50);
+        setHorizontalVelocity(-80);
         if (player.direction == RIGHT)
         {
             iMirrorSprite(&playerIdleSprite, HORIZONTAL);
@@ -593,7 +701,7 @@ void iSpecialKeyboard(unsigned char key, int state)
     }
     case GLUT_KEY_RIGHT:
     {
-        setHorizontalVelocity(50);
+        setHorizontalVelocity(80);
         if (player.direction == LEFT)
         {
             iMirrorSprite(&playerIdleSprite, HORIZONTAL);
