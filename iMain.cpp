@@ -18,6 +18,7 @@
 // TODO: Extract Position and Size structs.
 // TODO: Remove the printf statements after finishing the game.
 // TODO: Add loading screen.
+// TODO: Make all snake_case variables camelCase.
 
 // ? How often the iDraw() function is called? Is it constant or device dependent?
 
@@ -27,12 +28,18 @@
 #define COLUMNS 32
 #define ROWS 18
 #define TILE_SIZE (WIDTH / COLUMNS)
-#define LEVEL_COUNT 5
 
+#define LEVEL_COUNT 5
 #define MAX_LAYER_COUNT 10
+
 #define FLIPPED_HORIZONTALLY_FLAG 0x80000000
 #define FLIPPED_VERTICALLY_FLAG 0x40000000
 #define DOES_COLLIDE_FLAG 0x10000000
+
+#define PLAYER_INITIAL_X 200
+#define PLAYER_INITIAL_Y 300
+#define X_ANIMATION_DEL_X 5
+#define GRAVITY 80
 
 // TODO: Learn more about enum.
 enum Direction
@@ -79,8 +86,8 @@ struct Button
 
 struct Player
 {
-    double x = 200;
-    double y = 150;
+    int x = PLAYER_INITIAL_X;
+    double y = PLAYER_INITIAL_Y;
     double width = TILE_SIZE;
     double height = TILE_SIZE;
     Direction direction = RIGHT;
@@ -112,15 +119,15 @@ int doesCollideArray[ROWS][COLUMNS] = {};
 
 // * Game state variables
 int gameStateUpdateTimer;
+int horizontalMovementTimer;
 int coinAnimationTimer; // TODO: Create separate timer for each sprite animation?
-double velocityX = 0;
+Player player;
+int animateToX = player.x;
 double velocityY = 0;
 int collectedCoins = 0;
-Player player;
 // TODO: Include these in the player struct.
 // TODO: Handle the jump in a better way?
 bool isJumping = false; // isJumping tells whether the player just jumped or not.
-bool isOnAir = false;
 int jumpAnimationFrame = 0;
 
 // * These functions acts as UI Widgets.
@@ -261,12 +268,11 @@ void resetGame()
     // TODO: Check this rigorously.
     iPauseTimer(gameStateUpdateTimer);
     iPauseTimer(coinAnimationTimer);
-    player.x = 200;
-    player.y = 150;
-    player.direction = RIGHT;
-    velocityX = 0;
+    player.x = PLAYER_INITIAL_X;
+    player.y = PLAYER_INITIAL_Y;
+    animateToX = player.x;
     velocityY = 0;
-    isOnAir = false;
+    player.direction = RIGHT;
     isJumping = false;
     jumpAnimationFrame = 0;
     isResumable = 0;
@@ -311,105 +317,36 @@ struct Button buttons[50] = {
 // TODO: Clean the if-elses.
 // TODO: Add horizontal collision detection.
 // TODO: Invert velocity for bouncing.
-void checkCollisionWithTilesAndMoveAccordingly(double delX = 0, double delY = 0)
+void moveVerticallyTillCollision(double delY)
 {
-    int tileRow = (ROWS - 1) - (int)((player.y + delY) / TILE_SIZE);
-    int tileCol = (int)((player.x + delX) / TILE_SIZE);
-
-    if (tileRow < 0 || tileRow >= ROWS || tileCol < 0 || tileCol >= COLUMNS)
-    {
-        printf("OUT OF BOUNDS\n");
-        return;
-    }
-    else if (doesCollideArray[tileRow][tileCol] || (tileCol < COLUMNS - 1 && doesCollideArray[tileRow][tileCol + 1]))
-    {
-        double tileY = (ROWS - tileRow - 1) * TILE_SIZE;
-        if (player.y + delY < tileY + TILE_SIZE)
-        {
-            // TODO: Clean this mess
-            // printf("%d\n", (tileCol + 1) * TILE_SIZE);
-            // printf("%f\n", (player.x));
-            // Blocked by a tile below.
-            if (!doesCollideArray[tileRow][tileCol] && (tileCol + 1) * TILE_SIZE - (player.x + delX + player.width) < 0.5)
-            {
-                player.x = tileCol * TILE_SIZE;
-                velocityX = 0;
-            }
-            else if (!doesCollideArray[tileRow][tileCol + 1] && player.x + delX - (tileCol + 1) * TILE_SIZE < 0.5)
-            {
-                player.x = (tileCol + 1) * TILE_SIZE;
-                velocityX = 0;
-            }
-            else
-            {
-                player.y = tileY + TILE_SIZE;
-                velocityY = 0;
-                isOnAir = false;
-                return;
-            }
-        }
-    }
-    else if (tileRow > 0 && (doesCollideArray[tileRow - 1][tileCol] || (tileCol < COLUMNS - 1 && doesCollideArray[tileRow - 1][tileCol + 1])))
-    {
-        double tileY = (ROWS - tileRow - 1) * TILE_SIZE;
-        if (player.y + delY > tileY)
-        {
-            // Blocked by a tile above.
-            player.y = tileY;
-            velocityY = 0;
-            return;
-        }
-    }
-    player.x += delX;
-    player.y += delY;
-}
-
-// TODO: Are these functions needed?
-void setVerticalVelocity(double amount)
-{
-    velocityY = amount;
-}
-
-void setHorizontalVelocity(double amount)
-{
-    velocityX = amount;
-}
-
-void moveVerticallyIfPossible(double delY)
-{
-    if (player.y + delY < 0)
+    if (player.y + delY < 0) // Collision with the bottom of the screen.
     {
         player.y = 0;
         velocityY = 0;
-        isOnAir = false;
     }
-    else if (player.y + player.height + delY > HEIGHT)
+    else if (player.y + player.height + delY > HEIGHT) // Collision with the top of the screen.
     {
         player.y = HEIGHT - player.height;
         velocityY = 0;
-        isOnAir = false;
     }
     else
     {
-        checkCollisionWithTilesAndMoveAccordingly(0, delY);
-    }
-}
-
-void moveHorizontallyIfPossible(double delX)
-{
-    if (player.x + delX < 0)
-    {
-        player.x = 0;
-        velocityX = 0;
-    }
-    else if (player.x + player.width + delX > WIDTH)
-    {
-        player.x = WIDTH - player.width;
-        velocityX = 0;
-    }
-    else
-    {
-        checkCollisionWithTilesAndMoveAccordingly(delX, 0);
+        int row = (int)((player.y + delY) / TILE_SIZE);
+        int col = (int)(animateToX / TILE_SIZE);
+        if (doesCollideArray[ROWS - row - 1][col]) // Collision with the tile below the player.
+        {
+            player.y = (row + 1) * TILE_SIZE;
+            velocityY = 0;
+        }
+        else if (doesCollideArray[ROWS - row - 2][col]) // Collision with the tile above the player.
+        {
+            player.y = row * TILE_SIZE;
+            velocityY = 0;
+        }
+        else
+        {
+            player.y += delY;
+        }
     }
 }
 
@@ -417,26 +354,11 @@ void gameStateUpdate()
 {
     // ? Store these as macros?
     double delT = 0.08;
-    double horizontalResistance;
-    if (isOnAir)
-    {
-        horizontalResistance = 15; // Air resistance
-    }
-    else
-    {
-        horizontalResistance = 22; // Friction
-    }
-    double gravity = 40;
-    // double gravity = 0;
 
-    int velocityXDir = velocityX == 0 ? 0 : (velocityX > 0 ? 1 : -1);
-    velocityX += -1 * velocityXDir * horizontalResistance * delT; // Apply air resistance
-    double delX = velocityX * delT;
-    moveHorizontallyIfPossible(delX);
-
-    velocityY -= gravity * delT; // Apply gravity
+    velocityY -= GRAVITY * delT; // Apply gravity
     double delY = velocityY * delT;
-    moveVerticallyIfPossible(delY);
+
+    moveVerticallyTillCollision(delY);
 
     // if (player.y <= 0)
     // {
@@ -449,6 +371,22 @@ void gameStateUpdate()
         resetGame();
         currentPage = WIN_PAGE;
         isResumable = 0;
+    }
+}
+
+void animateHorizontalMovement()
+{
+    if (player.x < animateToX)
+    {
+        player.x += X_ANIMATION_DEL_X;
+    }
+    else if (player.x > animateToX)
+    {
+        player.x -= X_ANIMATION_DEL_X;
+    }
+    else
+    {
+        iPauseTimer(horizontalMovementTimer);
     }
 }
 
@@ -515,6 +453,7 @@ void iDraw()
     drawTilesAndCoins();
 
     // Player
+    // iFilledRectangle(player.x, player.y, player.width, player.height);
     if (velocityY > 0)
     {
         iSetSpritePosition(&playerJumpSprite, player.x, player.y);
@@ -744,15 +683,18 @@ void iSpecialKeyboard(unsigned char key, int state)
     {
     case GLUT_KEY_UP:
     {
-        setVerticalVelocity(100);
+        velocityY = 120;
         isJumping = true;
-        isOnAir = true;
         jumpAnimationFrame = 0;
         break;
     }
     case GLUT_KEY_LEFT:
     {
-        setHorizontalVelocity(-80);
+        if (state == GLUT_DOWN && !doesCollideArray[ROWS - (int)(player.y / TILE_SIZE) - 1][(player.x / TILE_SIZE) - 1] && animateToX >= TILE_SIZE)
+        {
+            iResumeTimer(horizontalMovementTimer);
+            animateToX -= TILE_SIZE;
+        }
         if (player.direction == RIGHT)
         {
             iMirrorSprite(&playerIdleSprite, HORIZONTAL);
@@ -763,7 +705,12 @@ void iSpecialKeyboard(unsigned char key, int state)
     }
     case GLUT_KEY_RIGHT:
     {
-        setHorizontalVelocity(80);
+        // setHorizontalVelocity(80);
+        if (state == GLUT_DOWN && !doesCollideArray[ROWS - (int)(player.y / TILE_SIZE) - 1][(player.x / TILE_SIZE) + 1])
+        {
+            iResumeTimer(horizontalMovementTimer);
+            animateToX += TILE_SIZE;
+        }
         if (player.direction == LEFT)
         {
             iMirrorSprite(&playerIdleSprite, HORIZONTAL);
@@ -793,32 +740,6 @@ void iMouse(int button, int state, int mx, int my)
             }
         }
     }
-    // // For debugging purposes.
-    // if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN)
-    // {
-    //     player.x = mx;
-    //     player.y = my;
-    //     int tileRow = (ROWS - 1) - (int)((player.y) / TILE_SIZE);
-    //     int tileCol = (int)((player.x) / TILE_SIZE);
-
-    //     if (tileRow < 0 || tileRow >= ROWS || tileCol < 0 || tileCol >= COLUMNS)
-    //     {
-    //         printf("OUT OF BOUNDS\n");
-    //         return;
-    //     }
-    //     else
-    //     {
-    //         if (doesCollideArray[tileRow][tileCol] == 1)
-    //         {
-    //             printf("COLLISION\n");
-    //         }
-    //         else
-    //         {
-    //             printf("NO COLLISION\n");
-    //         }
-    //         printf("\n");
-    //     }
-    // }
 }
 
 void iMouseMove(int mx, int my)
@@ -835,6 +756,9 @@ void iMouseWheel(int dir, int mx, int my)
 
 void iMouseDrag(int mx, int my)
 {
+    // // For debugging purposes.
+    // player.x = mx;
+    // player.y = my;
 }
 
 int main(int argc, char *argv[])
@@ -842,8 +766,10 @@ int main(int argc, char *argv[])
     glutInit(&argc, argv); // argc and argv are used for command line arguments.
 
     gameStateUpdateTimer = iSetTimer(10, gameStateUpdate);
+    horizontalMovementTimer = iSetTimer(10, animateHorizontalMovement);
     coinAnimationTimer = iSetTimer(100, animateSprites);
     iPauseTimer(gameStateUpdateTimer);
+    iPauseTimer(horizontalMovementTimer);
     iPauseTimer(coinAnimationTimer);
 
     iOpenWindow(WIDTH, HEIGHT, TITLE);
