@@ -1,24 +1,38 @@
 #include "iGraphics.h"
 #include "iFont.h"
 
+// * Bugs
+// TODO: Bug: Player moving to the right on its own.
+// TODO: Reckheck pausing mechanism.
+
+// * Optimization
+// TODO: Optimize asset loading.
+// TODO: Free images and sprites.
+// TODO: Handle keyboard control only if the current page is GAME_PAGE.
+
+// * Tasks
 // TODO: Add player running sprite.
-// TODO: Try to make the game responsive to different screen sizes and full screen.
+// TODO: Try to make the game full screen.
 // TODO: Divide the code into multiple files.
 // TODO: Try to use object oriented programming.
+// TODO: Extract Position and Size structs.
 // TODO: Remove the printf statements after finishing the game.
+// TODO: Add loading screen.
+
 // ? How often the iDraw() function is called? Is it constant or device dependent?
 
-// TODO: Bug: Player moving to the right on its own.
-
-// TODO: Handle keyboard control only if the current page is GAME_PAGE.
-// TODO: Extract Position and Size structs.
-
+#define TITLE "RETRO RACCOON"
 #define WIDTH 1280
 #define HEIGHT 720
 #define COLUMNS 32
 #define ROWS 18
-#define TITLE "RETRO RACCOON"
 #define TILE_SIZE (WIDTH / COLUMNS)
+#define LEVEL_COUNT 5
+
+#define MAX_LAYER_COUNT 10
+#define FLIPPED_HORIZONTALLY_FLAG 0x80000000
+#define FLIPPED_VERTICALLY_FLAG 0x40000000
+#define DOES_COLLIDE_FLAG 0x10000000
 
 // TODO: Learn more about enum.
 enum Direction
@@ -40,34 +54,12 @@ enum Page
     WIN_PAGE,
 };
 
-enum TileType
-{
-    TILE_TOP,
-    TILE_BOTTOM,
-    TILE_LEFT,
-    TILE_RIGHT,
-    TILE_TOP_LEFT,
-    TILE_TOP_RIGHT,
-    TILE_BOTTOM_LEFT,
-    TILE_BOTTOM_RIGHT,
-    TILE
-};
-
 struct Color
 {
     int red;
     int green;
     int blue;
     float alpha;
-};
-
-struct Player
-{
-    double x = 200;
-    double y = 150;
-    double width = TILE_SIZE;
-    double height = TILE_SIZE;
-    Direction direction = RIGHT;
 };
 
 struct Button
@@ -85,45 +77,48 @@ struct Button
     void (*onClick)(void);
 };
 
+struct Player
+{
+    double x = 200;
+    double y = 150;
+    double width = TILE_SIZE;
+    double height = TILE_SIZE;
+    Direction direction = RIGHT;
+};
+
 // * Game UI management variables
 int currentPage = MENU_PAGE;
-int isResumable = 0;
 int currentLevel = 1;
-char levelText[50];
-bool firstDraw = true;
+int isResumable = 0;
+int isFirstDraw = 1;
+char levelCompletionText[50]; // TODO: Find a better way to handle this.
 char scoreText[50];
 int mouseX = 0;
 int mouseY = 0;
 
 // * Asset management variables
 Image background_image;
-Image tileBrownTop;
-Image tileBrownBottom;
-Image tileBrownLeft;
-Image tileBrownRight;
-Image tileBrownTopLeft;
-Image tileBrownTopRight;
-Image tileBrownBottomLeft;
-Image tileBrownBottomRight;
-Image tileBrown;
-
-char tiles[ROWS][COLUMNS + 1] = {};
+Image tileImages[180]; // TODO: Load only the tiles that are needed.
 Image coinFrames[5];
 Sprite coinSprite;
 Image playerIdleFrames[4];
 Sprite playerIdleSprite;
-// TODO: Check whether jumping needs another set of frames at the bottom.
 Image playerJumpFrames[5];
 Sprite playerJumpSprite;
+int loadedLevels[LEVEL_COUNT] = {0};
+int layerCount;
+int tiles[MAX_LAYER_COUNT][ROWS][COLUMNS][3] = {};
+int doesCollideArray[ROWS][COLUMNS] = {};
 
 // * Game state variables
 int gameStateUpdateTimer;
-int coinAnimationTimer;
+int coinAnimationTimer; // TODO: Create separate timer for each sprite animation?
 double velocityX = 0;
 double velocityY = 0;
 int collectedCoins = 0;
 Player player;
 // TODO: Include these in the player struct.
+// TODO: Handle the jump in a better way?
 bool isJumping = false; // isJumping tells whether the player just jumped or not.
 bool isOnAir = false;
 int jumpAnimationFrame = 0;
@@ -143,30 +138,87 @@ void drawButton(Button button);
 // * Initialization functions
 void loadLevel(int level)
 {
-    FILE *file_pointer;
-    char filename[20];
-    sprintf(filename, "levels/level%d.txt", level);
-    file_pointer = fopen(filename, "r");
-    char discard[2];
-    if (file_pointer != NULL)
+    if (loadedLevels[level - 1] == 1)
     {
-        for (int row = 1; row <= ROWS; row++)
+        return;
+    }
+
+    // Initialize the doesCollideArray to 0.
+    for (int row = 0; row < ROWS; row++)
+    {
+        for (int col = 0; col < COLUMNS; col++)
         {
-            fgets(tiles[row - 1], COLUMNS + 1, file_pointer); // +1 for null terminator.
-            fgets(discard, 1 + 1, file_pointer);              // Read and discard the newline character. +1 for null terminator.
-            // ? Is input buffer handling needed?
+            doesCollideArray[row][col] = 0;
+        }
+    }
+
+    char level_metadata_filename[100];
+    sprintf(level_metadata_filename, "levels/level%d/n.txt", level);
+    FILE *level_metadata_file = fopen(level_metadata_filename, "r");
+    if (level_metadata_file == NULL)
+    {
+        // TODO: Bug: Why is this called twice?
+        printf("Level metadata file open failed\n");
+        return;
+    }
+    fscanf(level_metadata_file, "%d", &layerCount);
+    fclose(level_metadata_file);
+
+    for (int layer = 0; layer < layerCount; layer++)
+    {
+        char layer_file_name[100];
+        sprintf(layer_file_name, "levels/level%d/%d_customized.csv", level, layer);
+        FILE *layer_file = fopen(layer_file_name, "r");
+        if (layer_file == NULL)
+        {
+            printf("Layer file open failed\n");
+            return;
         }
 
-        for (int i = 0; i < ROWS; i++)
+        char line[1000]; // TODO: Adjust the size
+        int row = 0;
+        // TODO: Learn how this works in-depth.
+        while (fgets(line, sizeof(line), layer_file))
         {
-            printf("%d: %s\n", i, tiles[i]);
+            char *cell;
+            cell = strtok(line, ",\n");
+            int col = 0;
+            while (cell)
+            {
+                int gid = atoi(cell);
+                if (gid == -1)
+                {
+                    tiles[layer][row][col][0] = -1;
+                    tiles[layer][row][col][1] = 0;
+                    tiles[layer][row][col][2] = 0;
+                }
+                else
+                {
+                    int flip_h = (gid & FLIPPED_HORIZONTALLY_FLAG) != 0;
+                    int flip_v = (gid & FLIPPED_VERTICALLY_FLAG) != 0;
+                    int does_collide = (gid & DOES_COLLIDE_FLAG) != 0;
+
+                    // Mask out flip flags to get actual GID
+                    int id = gid & ~(FLIPPED_HORIZONTALLY_FLAG | FLIPPED_VERTICALLY_FLAG | DOES_COLLIDE_FLAG);
+                    tiles[layer][row][col][0] = id;
+                    tiles[layer][row][col][1] = flip_h;
+                    tiles[layer][row][col][2] = flip_v;
+                    if (does_collide == 1)
+                    {
+                        doesCollideArray[row][col] = 1;
+                    }
+                }
+                cell = strtok(NULL, ",\n");
+                col++;
+            }
+            row++;
         }
+        fclose(layer_file);
     }
-    else
-    {
-        printf("Failed to load level.");
-    }
-    fclose(file_pointer);
+
+    // Mark the level as loaded.
+    printf("Level %d loaded\n", level);
+    loadedLevels[level - 1] = 1;
 }
 
 void loadAssets()
@@ -176,24 +228,13 @@ void loadAssets()
     iResizeImage(&background_image, WIDTH, HEIGHT);
 
     // Load tiles
-    iLoadImage(&tileBrownTop, "assets/images/tiles/tile_b_t.png");
-    iResizeImage(&tileBrownTop, TILE_SIZE, TILE_SIZE);
-    iLoadImage(&tileBrownBottom, "assets/images/tiles/tile_b_b.png");
-    iResizeImage(&tileBrownBottom, TILE_SIZE, TILE_SIZE);
-    iLoadImage(&tileBrownLeft, "assets/images/tiles/tile_b_l.png");
-    iResizeImage(&tileBrownLeft, TILE_SIZE, TILE_SIZE);
-    iLoadImage(&tileBrownRight, "assets/images/tiles/tile_b_r.png");
-    iResizeImage(&tileBrownRight, TILE_SIZE, TILE_SIZE);
-    iLoadImage(&tileBrownTopLeft, "assets/images/tiles/tile_b_tl.png");
-    iResizeImage(&tileBrownTopLeft, TILE_SIZE, TILE_SIZE);
-    iLoadImage(&tileBrownTopRight, "assets/images/tiles/tile_b_tr.png");
-    iResizeImage(&tileBrownTopRight, TILE_SIZE, TILE_SIZE);
-    iLoadImage(&tileBrownBottomLeft, "assets/images/tiles/tile_b_bl.png");
-    iResizeImage(&tileBrownBottomLeft, TILE_SIZE, TILE_SIZE);
-    iLoadImage(&tileBrownBottomRight, "assets/images/tiles/tile_b_br.png");
-    iResizeImage(&tileBrownBottomRight, TILE_SIZE, TILE_SIZE);
-    iLoadImage(&tileBrown, "assets/images/tiles/tile_b.png");
-    iResizeImage(&tileBrown, TILE_SIZE, TILE_SIZE);
+    for (int i = 0; i < 180; i++)
+    {
+        char filename[100];
+        sprintf(filename, "assets/experiment/tiles/%d.png", i);
+        iLoadImage(&tileImages[i], filename);
+        iResizeImage(&tileImages[i], TILE_SIZE, TILE_SIZE);
+    }
 
     // Load coin sprite
     iLoadFramesFromFolder(coinFrames, "assets/sprites/coin/");
@@ -217,6 +258,7 @@ void loadAssets()
 
 void resetGame()
 {
+    // TODO: Check this rigorously.
     iPauseTimer(gameStateUpdateTimer);
     iPauseTimer(coinAnimationTimer);
     player.x = 200;
@@ -227,7 +269,6 @@ void resetGame()
     isOnAir = false;
     isJumping = false;
     jumpAnimationFrame = 0;
-    firstDraw = true;
     isResumable = 0;
 
     sprintf(scoreText, "Score: %d", collectedCoins);
@@ -264,7 +305,7 @@ struct Button buttons[50] = {
      { changeLevel(4); }},
     {WIDTH / 2 - 180, 120, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 5", 40, 8, LEVELS_PAGE, []()
      { changeLevel(5); }},
-};
+}; // TODO: Add extra dimension for pages?
 
 // * Game logic functions
 // TODO: Clean the if-elses.
@@ -280,7 +321,7 @@ void checkCollisionWithTilesAndMoveAccordingly(double delX = 0, double delY = 0)
         printf("OUT OF BOUNDS\n");
         return;
     }
-    else if (tiles[tileRow][tileCol] == '#' || (tileCol < COLUMNS - 1 && tiles[tileRow][tileCol + 1] == '#'))
+    else if (doesCollideArray[tileRow][tileCol] || (tileCol < COLUMNS - 1 && doesCollideArray[tileRow][tileCol + 1]))
     {
         double tileY = (ROWS - tileRow - 1) * TILE_SIZE;
         if (player.y + delY < tileY + TILE_SIZE)
@@ -289,12 +330,12 @@ void checkCollisionWithTilesAndMoveAccordingly(double delX = 0, double delY = 0)
             // printf("%d\n", (tileCol + 1) * TILE_SIZE);
             // printf("%f\n", (player.x));
             // Blocked by a tile below.
-            if (tiles[tileRow][tileCol] != '#' && (tileCol + 1) * TILE_SIZE - (player.x + delX + player.width) < 0.5)
+            if (!doesCollideArray[tileRow][tileCol] && (tileCol + 1) * TILE_SIZE - (player.x + delX + player.width) < 0.5)
             {
                 player.x = tileCol * TILE_SIZE;
                 velocityX = 0;
             }
-            else if (tiles[tileRow][tileCol + 1] != '#' && player.x + delX - (tileCol + 1) * TILE_SIZE < 0.5)
+            else if (!doesCollideArray[tileRow][tileCol + 1] && player.x + delX - (tileCol + 1) * TILE_SIZE < 0.5)
             {
                 player.x = (tileCol + 1) * TILE_SIZE;
                 velocityX = 0;
@@ -308,7 +349,7 @@ void checkCollisionWithTilesAndMoveAccordingly(double delX = 0, double delY = 0)
             }
         }
     }
-    else if (tileRow > 0 && (tiles[tileRow - 1][tileCol] == '#' || (tileCol < COLUMNS - 1 && tiles[tileRow - 1][tileCol + 1] == '#')))
+    else if (tileRow > 0 && (doesCollideArray[tileRow - 1][tileCol] || (tileCol < COLUMNS - 1 && doesCollideArray[tileRow - 1][tileCol + 1])))
     {
         double tileY = (ROWS - tileRow - 1) * TILE_SIZE;
         if (player.y + delY > tileY)
@@ -386,6 +427,7 @@ void gameStateUpdate()
         horizontalResistance = 22; // Friction
     }
     double gravity = 40;
+    // double gravity = 0;
 
     int velocityXDir = velocityX == 0 ? 0 : (velocityX > 0 ? 1 : -1);
     velocityX += -1 * velocityXDir * horizontalResistance * delT; // Apply air resistance
@@ -396,14 +438,14 @@ void gameStateUpdate()
     double delY = velocityY * delT;
     moveVerticallyIfPossible(delY);
 
-    if (player.y <= 0)
-    {
-        resetGame();
-        currentPage = GAME_OVER_PAGE;
-    }
+    // if (player.y <= 0)
+    // {
+    //     resetGame();
+    //     currentPage = GAME_OVER_PAGE;
+    // }
     if (player.x + player.width > WIDTH)
     {
-        sprintf(levelText, "Level %d Completed", currentLevel);
+        sprintf(levelCompletionText, "Level %d Completed", currentLevel);
         resetGame();
         currentPage = WIN_PAGE;
         isResumable = 0;
@@ -438,25 +480,26 @@ void checkCollisionWithCoins()
     {
         for (int col = 0; col < COLUMNS; col++)
         {
-            if (tiles[row][col] == 'O')
-            {
-                // ? Corner problem?
-                double coinX = col * (TILE_SIZE) + (TILE_SIZE) / 2;
-                double coinY = (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2;
-                if (player.x < coinX + 10 && player.x + player.width > coinX - 10 &&
-                    player.y < coinY + 10 && player.y + player.height > coinY - 10)
-                {
-                    collectedCoins++;
-                    tiles[row][col] = ' ';
-                }
-            }
+            // TODO: Add coin animation
+            // if (tiles[row][col] == 'O')
+            // {
+            //     // ? Corner problem?
+            //     double coinX = col * (TILE_SIZE) + (TILE_SIZE) / 2;
+            //     double coinY = (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2;
+            //     if (player.x < coinX + 10 && player.x + player.width > coinX - 10 &&
+            //         player.y < coinY + 10 && player.y + player.height > coinY - 10)
+            //     {
+            //         collectedCoins++;
+            //         tiles[row][col] = ' ';
+            //     }
+            // }
         }
     }
 }
 
 void iDraw()
 {
-    if (firstDraw)
+    if (isFirstDraw)
     {
         loadAssets();
         loadLevel(currentLevel);
@@ -528,7 +571,7 @@ void iDraw()
         // TODO: Edge case handling.
     }
 
-    firstDraw = false;
+    isFirstDraw = false;
 }
 
 // * UI Widget: Small widget function definitions
@@ -544,76 +587,43 @@ void drawCoinCount()
 
 void drawTilesAndCoins()
 {
-    for (int row = 0; row < ROWS; row++)
+    for (int layer = 0; layer < layerCount; layer++)
     {
-        for (int col = 0; col < COLUMNS; col++)
+        for (int row = 0; row < ROWS; row++)
         {
-            if (tiles[row][col] == '#')
+            for (int col = 0; col < COLUMNS; col++)
             {
-                // Tile
-                double tileX = col * TILE_SIZE;
-                double tileY = (ROWS - row - 1) * TILE_SIZE;
-                TileType tileType;
-                if (row == 0 || tiles[row - 1][col] != '#')
+                if (tiles[layer][row][col][0] != -1)
                 {
-                    if (col == 0 || tiles[row][col - 1] != '#')
+                    // TODO: Find a better way to flip
+                    if (tiles[layer][row][col][1] == 1)
                     {
-                        tileType = TILE_TOP_LEFT;
-                        iShowLoadedImage(tileX, tileY, &tileBrownTopLeft);
+                        iMirrorImage(&tileImages[tiles[layer][row][col][0]], HORIZONTAL);
                     }
-                    else if (col == COLUMNS - 1 || tiles[row][col + 1] != '#')
+                    if (tiles[layer][row][col][2] == 1)
                     {
-                        tileType = TILE_TOP_RIGHT;
-                        iShowLoadedImage(tileX, tileY, &tileBrownTopRight);
+                        iMirrorImage(&tileImages[tiles[layer][row][col][0]], VERTICAL);
                     }
-                    else
+                    iShowLoadedImage(col * TILE_SIZE, (ROWS - row - 1) * TILE_SIZE, &tileImages[tiles[layer][row][col][0]]);
+                    // Reset the image.
+                    if (tiles[layer][row][col][1] == 1)
                     {
-                        tileType = TILE_TOP;
-                        iShowLoadedImage(tileX, tileY, &tileBrownTop);
+                        iMirrorImage(&tileImages[tiles[layer][row][col][0]], HORIZONTAL);
+                    }
+                    if (tiles[layer][row][col][2] == 1)
+                    {
+                        iMirrorImage(&tileImages[tiles[layer][row][col][0]], VERTICAL);
                     }
                 }
-                else if (row == ROWS - 1 || tiles[row + 1][col] != '#')
-                {
-                    if (col == 0 || tiles[row][col - 1] != '#')
-                    {
-                        tileType = TILE_BOTTOM_LEFT;
-                        iShowLoadedImage(tileX, tileY, &tileBrownBottomLeft);
-                    }
-                    else if (col == COLUMNS - 1 || tiles[row][col + 1] != '#')
-                    {
-                        tileType = TILE_BOTTOM_RIGHT;
-                        iShowLoadedImage(tileX, tileY, &tileBrownBottomRight);
-                    }
-                    else
-                    {
-                        tileType = TILE_BOTTOM;
-                        iShowLoadedImage(tileX, tileY, &tileBrownBottom);
-                    }
-                }
-                else if (col == 0 || tiles[row][col - 1] != '#')
-                {
-                    tileType = TILE_LEFT;
-                    iShowLoadedImage(tileX, tileY, &tileBrownLeft);
-                }
-                else if (col == COLUMNS - 1 || tiles[row][col + 1] != '#')
-                {
-                    tileType = TILE_RIGHT;
-                    iShowLoadedImage(tileX, tileY, &tileBrownRight);
-                }
-                else
-                {
-                    tileType = TILE;
-                    iShowLoadedImage(tileX, tileY, &tileBrown);
-                }
-                // iShowLoadedImage(tileX, tileY, &tile);
-            }
-            else if (tiles[row][col] == 'O')
-            {
-                // Coin
-                // TODO: Resizing makes the coin sprite blurry.
-                // iScaleSprite(&coinSprite, 0.1);
-                iSetSpritePosition(&coinSprite, col * (TILE_SIZE) + (TILE_SIZE) / 2, (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2);
-                iShowSprite(&coinSprite);
+
+                // if (tiles[row][col] == 'O')
+                // {
+                //     // Coin
+                //     // TODO: Resizing makes the coin sprite blurry.
+                //     // iScaleSprite(&coinSprite, 0.1);
+                //     iSetSpritePosition(&coinSprite, col * (TILE_SIZE) + (TILE_SIZE) / 2, (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2);
+                //     iShowSprite(&coinSprite);
+                // }
             }
         }
     }
@@ -703,7 +713,7 @@ void drawWinPage()
     iShowLoadedImage(0, 0, &background_image);
 
     iSetColor(0, 0, 0);
-    iShowText(200, HEIGHT / 2 + 50, levelText, "assets/fonts/minecraft_ten.ttf", 100);
+    iShowText(200, HEIGHT / 2 + 50, levelCompletionText, "assets/fonts/minecraft_ten.ttf", 100);
     iShowText(WIDTH / 2 - 110, HEIGHT / 2 - 50, scoreText, "assets/fonts/minecraft_ten.ttf", 60);
 }
 
@@ -778,15 +788,42 @@ void iMouse(int button, int state, int mx, int my)
         {
             if (buttons[i].page == currentPage && mx >= buttons[i].x && mx <= buttons[i].x + buttons[i].width && my >= buttons[i].y && my <= buttons[i].y + buttons[i].height)
             {
+                printf("Clicked button: %s\n", buttons[i].text);
                 buttons[i].onClick();
             }
         }
     }
+    // // For debugging purposes.
+    // if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN)
+    // {
+    //     player.x = mx;
+    //     player.y = my;
+    //     int tileRow = (ROWS - 1) - (int)((player.y) / TILE_SIZE);
+    //     int tileCol = (int)((player.x) / TILE_SIZE);
+
+    //     if (tileRow < 0 || tileRow >= ROWS || tileCol < 0 || tileCol >= COLUMNS)
+    //     {
+    //         printf("OUT OF BOUNDS\n");
+    //         return;
+    //     }
+    //     else
+    //     {
+    //         if (doesCollideArray[tileRow][tileCol] == 1)
+    //         {
+    //             printf("COLLISION\n");
+    //         }
+    //         else
+    //         {
+    //             printf("NO COLLISION\n");
+    //         }
+    //         printf("\n");
+    //     }
+    // }
 }
 
-// TODO: Cleaner hover effect handling.
 void iMouseMove(int mx, int my)
 {
+    // For hover effect.
     mouseX = mx;
     mouseY = my;
 }
