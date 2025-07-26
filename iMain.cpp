@@ -225,7 +225,7 @@ void loadLevel(int level)
     for (int layer = 0; layer < layerCount; layer++)
     {
         char layer_file_name[100];
-        sprintf(layer_file_name, "levels/level%d/%d_customized.csv", level, layer);
+        sprintf(layer_file_name, "levels/level%d/layer_%d_customized.csv", level, layer);
         FILE *layer_file = fopen(layer_file_name, "r");
         if (layer_file == NULL)
         {
@@ -298,21 +298,21 @@ void loadLevel(int level)
 void loadAssets()
 {
     // Load images
-    iLoadImage(&background_image, "assets/images/menu_page_background.png");
+    iLoadImage(&background_image, "assets/backgrounds/background.png");
     iResizeImage(&background_image, WIDTH, HEIGHT);
 
     // Load tiles
     for (int i = 0; i < 180; i++)
     {
         char filename[100];
-        sprintf(filename, "assets/experiment/tiles/%d.png", i);
+        sprintf(filename, "assets/tiles/%d.png", i);
         iLoadImage(&tileImages[i], filename);
         iResizeImage(&tileImages[i], TILE_SIZE, TILE_SIZE);
     }
 
     // Load life images
-    iLoadImage(&lifeImages[0], "assets/images/life_tiles/no_life.png");
-    iLoadImage(&lifeImages[1], "assets/images/life_tiles/full_life.png");
+    iLoadImage(&lifeImages[0], "assets/special_tiles/no_life.png");
+    iLoadImage(&lifeImages[1], "assets/special_tiles/full_life.png");
 
     // Load coin sprite
     iLoadFramesFromFolder(coinFrames, "assets/sprites/coin/");
@@ -548,6 +548,10 @@ void checkCollisionWithTraps()
         player.y = PLAYER_INITIAL_Y;
         animateToX = player.x;
         velocityY = 0;
+        if (player.direction == LEFT) {
+            iMirrorSprite(&playerIdleSprite, HORIZONTAL);
+            iMirrorSprite(&playerJumpSprite, HORIZONTAL);
+        }
         player.direction = RIGHT;
         isJumping = false;
         jumpAnimationFrame = 0;
@@ -692,15 +696,6 @@ void drawTiles()
                         drawTile(layer, row, col);
                     }
                 }
-
-                // if (tiles[row][col] == 'O')
-                // {
-                //     // Coin
-                //     // TODO: Resizing makes the coin sprite blurry.
-                //     // iScaleSprite(&coinSprite, 0.1);
-                //     iSetSpritePosition(&coinSprite, col * (TILE_SIZE) + (TILE_SIZE) / 2, (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2);
-                //     iShowSprite(&coinSprite);
-                // }
             }
         }
     }
