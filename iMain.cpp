@@ -19,6 +19,7 @@
 // TODO: Remove the printf statements after finishing the game.
 // TODO: Add loading screen.
 // TODO: Make all snake_case variables camelCase.
+// TODO: Sprite image count marco instead of hardcoding.
 
 // ? How often the iDraw() function is called? Is it constant or device dependent?
 
@@ -31,10 +32,18 @@
 
 #define LEVEL_COUNT 5
 #define MAX_LAYER_COUNT 10
+#define MAX_COLLECTABLE_COUNT 30
 
 #define FLIPPED_HORIZONTALLY_FLAG 0x80000000
 #define FLIPPED_VERTICALLY_FLAG 0x40000000
 #define DOES_COLLIDE_FLAG 0x10000000
+
+#define FLAG_ID 111
+#define COIN_ID 151
+#define DIAMOND_ID 67
+
+#define COIN_SCORE 10
+#define DIAMOND_SCORE 20
 
 #define PLAYER_INITIAL_X 200
 #define PLAYER_INITIAL_Y 300
@@ -106,8 +115,10 @@ int mouseY = 0;
 // * Asset management variables
 Image background_image;
 Image tileImages[180]; // TODO: Load only the tiles that are needed.
-Image coinFrames[5];
+Image coinFrames[2];
 Sprite coinSprite;
+Image flagFrames[2];
+Sprite flagSprite;
 Image playerIdleFrames[4];
 Sprite playerIdleSprite;
 Image playerJumpFrames[5];
@@ -116,15 +127,23 @@ int loadedLevels[LEVEL_COUNT] = {0};
 int layerCount;
 int tiles[MAX_LAYER_COUNT][ROWS][COLUMNS][3] = {};
 int doesCollideArray[ROWS][COLUMNS] = {};
+int coinArray[ROWS][COLUMNS] = {};
+int diamondArray[ROWS][COLUMNS] = {};
+
+int collectedCoinCount = 0;
+int collectedDiamondCount = 0;
+// Stores the row and column of the collected coins and diamonds.
+int collectedCoins[MAX_COLLECTABLE_COUNT][2] = {};
+int collectedDiamonds[MAX_COLLECTABLE_COUNT][2] = {};
 
 // * Game state variables
 int gameStateUpdateTimer;
 int horizontalMovementTimer;
-int coinAnimationTimer; // TODO: Create separate timer for each sprite animation?
+int spriteAnimationTimer; // TODO: Create separate timer for each sprite animation?
 Player player;
 int animateToX = player.x;
 double velocityY = 0;
-int collectedCoins = 0;
+int score = 0;
 // TODO: Include these in the player struct.
 // TODO: Handle the jump in a better way?
 bool isJumping = false; // isJumping tells whether the player just jumped or not.
@@ -138,11 +157,23 @@ void drawOptionsPage();
 void drawWinPage();
 void drawGameOverPage();
 
-void drawCoinCount();
-void drawTilesAndCoins();
+void drawScore();
+void drawTile(int layer, int row, int col, Sprite *sprite = NULL);
+void drawTiles();
 void drawButton(Button button);
 
 // * Initialization functions
+void initializeGridArrays(int array[ROWS][COLUMNS], int value)
+{
+    for (int row = 0; row < ROWS; row++)
+    {
+        for (int col = 0; col < COLUMNS; col++)
+        {
+            array[row][col] = value;
+        }
+    }
+}
+
 void loadLevel(int level)
 {
     if (loadedLevels[level - 1] == 1)
@@ -150,13 +181,18 @@ void loadLevel(int level)
         return;
     }
 
-    // Initialize the doesCollideArray to 0.
-    for (int row = 0; row < ROWS; row++)
+    // ? Should I initialize the arrays here?
+    initializeGridArrays(doesCollideArray, 0);
+    initializeGridArrays(coinArray, 0);
+    initializeGridArrays(diamondArray, 0);
+
+    // Initialize the collected collectables.
+    for (int i = 0; i < MAX_COLLECTABLE_COUNT; i++)
     {
-        for (int col = 0; col < COLUMNS; col++)
-        {
-            doesCollideArray[row][col] = 0;
-        }
+        collectedCoins[i][0] = -1;
+        collectedCoins[i][1] = -1;
+        collectedDiamonds[i][0] = -1;
+        collectedDiamonds[i][1] = -1;
     }
 
     char level_metadata_filename[100];
@@ -214,6 +250,14 @@ void loadLevel(int level)
                     {
                         doesCollideArray[row][col] = 1;
                     }
+                    if (id == COIN_ID)
+                    {
+                        coinArray[row][col] = 1;
+                    }
+                    else if (id == DIAMOND_ID)
+                    {
+                        diamondArray[row][col] = 1;
+                    }
                 }
                 cell = strtok(NULL, ",\n");
                 col++;
@@ -246,8 +290,13 @@ void loadAssets()
     // Load coin sprite
     iLoadFramesFromFolder(coinFrames, "assets/sprites/coin/");
     iInitSprite(&coinSprite);
-    iChangeSpriteFrames(&coinSprite, coinFrames, 5);
-    iResizeSprite(&coinSprite, (int)(TILE_SIZE / 1.5), (int)(TILE_SIZE / 1.5));
+    iChangeSpriteFrames(&coinSprite, coinFrames, 2);
+    iResizeSprite(&coinSprite, TILE_SIZE, TILE_SIZE);
+
+    iLoadFramesFromFolder(flagFrames, "assets/sprites/flag/");
+    iInitSprite(&flagSprite);
+    iChangeSpriteFrames(&flagSprite, flagFrames, 2);
+    iResizeSprite(&flagSprite, TILE_SIZE, TILE_SIZE);
 
     // Load player sprite
     iLoadFramesFromFolder(playerIdleFrames, "assets/sprites/player/idle/");
@@ -267,7 +316,7 @@ void resetGame()
 {
     // TODO: Check this rigorously.
     iPauseTimer(gameStateUpdateTimer);
-    iPauseTimer(coinAnimationTimer);
+    iPauseTimer(spriteAnimationTimer);
     player.x = PLAYER_INITIAL_X;
     player.y = PLAYER_INITIAL_Y;
     animateToX = player.x;
@@ -277,8 +326,19 @@ void resetGame()
     jumpAnimationFrame = 0;
     isResumable = 0;
 
-    sprintf(scoreText, "Score: %d", collectedCoins);
-    collectedCoins = 0;
+    sprintf(scoreText, "Score: %d", score);
+    score = 0;
+
+    // Reset the collected collectables.
+    collectedCoinCount = 0;
+    collectedDiamondCount = 0;
+    for (int i = 0; i < MAX_COLLECTABLE_COUNT; i++)
+    {
+        collectedCoins[i][0] = -1;
+        collectedCoins[i][1] = -1;
+        collectedDiamonds[i][0] = -1;
+        collectedDiamonds[i][1] = -1;
+    }
 }
 
 void changeLevel(int level)
@@ -393,6 +453,7 @@ void animateHorizontalMovement()
 void animateSprites()
 {
     iAnimateSprite(&coinSprite);
+    iAnimateSprite(&flagSprite);
     // TODO: Recheck the logic.
     if (velocityY == 0)
     {
@@ -411,28 +472,38 @@ void animateSprites()
     }
 }
 
-// TODO: Revise this function.
-void checkCollisionWithCoins()
+int checkIfAlreadyCollected(int row, int col, int collectedCollectableArray[][2], int *collectedCollectableCount)
 {
-    for (int row = 0; row < ROWS; row++)
+    for (int i = 0; i < *collectedCollectableCount; i++)
     {
-        for (int col = 0; col < COLUMNS; col++)
-        {
-            // TODO: Add coin animation
-            // if (tiles[row][col] == 'O')
-            // {
-            //     // ? Corner problem?
-            //     double coinX = col * (TILE_SIZE) + (TILE_SIZE) / 2;
-            //     double coinY = (ROWS - row - 1) * (TILE_SIZE) + (TILE_SIZE) / 2;
-            //     if (player.x < coinX + 10 && player.x + player.width > coinX - 10 &&
-            //         player.y < coinY + 10 && player.y + player.height > coinY - 10)
-            //     {
-            //         collectedCoins++;
-            //         tiles[row][col] = ' ';
-            //     }
-            // }
+        if (collectedCollectableArray[i][0] == row && collectedCollectableArray[i][1] == col) {
+            return 1;
         }
     }
+    return 0;
+}
+
+void checkAndCollect(int collectableArray[ROWS][COLUMNS], int collectableId, int collectableScore, int collectedCollectableArray[][2], int *collectedCollectableCount)
+{
+    int row = ROWS - (int)(player.y / TILE_SIZE) - 1;
+    int col = (int)(animateToX / TILE_SIZE);
+
+    if (collectableArray[row][col]) // Collision tested rigorously.
+    {
+        if (!checkIfAlreadyCollected(row, col, collectedCollectableArray, collectedCollectableCount))
+        {
+            score += collectableScore;
+            collectedCollectableArray[*collectedCollectableCount][0] = row;
+            collectedCollectableArray[*collectedCollectableCount][1] = col;
+            (*collectedCollectableCount)++;
+        }
+    }
+}
+
+void updateAllCollectables()
+{
+    checkAndCollect(coinArray, COIN_ID, COIN_SCORE, collectedCoins, &collectedCoinCount);
+    checkAndCollect(diamondArray, DIAMOND_ID, DIAMOND_SCORE, collectedDiamonds, &collectedDiamondCount);
 }
 
 void iDraw()
@@ -450,7 +521,7 @@ void iDraw()
     iShowLoadedImage(0, 0, &background_image);
 
     // Draw tiles and coins
-    drawTilesAndCoins();
+    drawTiles();
 
     // Player
     // iFilledRectangle(player.x, player.y, player.width, player.height);
@@ -466,8 +537,8 @@ void iDraw()
     }
 
     // TODO: Optimize by redrawing the widgets only when they're changed.
-    checkCollisionWithCoins();
-    drawCoinCount();
+    updateAllCollectables();
+    drawScore();
 
     // * Page rendering
     if (currentPage == MENU_PAGE)
@@ -478,7 +549,7 @@ void iDraw()
     {
         // TODO: Don't resume every time iDraw() is called.
         iResumeTimer(gameStateUpdateTimer);
-        iResumeTimer(coinAnimationTimer);
+        iResumeTimer(spriteAnimationTimer);
         isResumable = 1;
     }
     else if (currentPage == LEVELS_PAGE)
@@ -514,17 +585,17 @@ void iDraw()
 }
 
 // * UI Widget: Small widget function definitions
-void drawCoinCount()
+void drawScore()
 {
     iSetColor(0, 0, 0);
     if (currentPage == GAME_PAGE)
     {
-        sprintf(scoreText, "Score: %d", collectedCoins);
+        sprintf(scoreText, "Score: %d", score);
     }
     iShowText(WIDTH - 210, HEIGHT - 78, scoreText, "assets/fonts/minecraft_ten.ttf", 40);
 }
 
-void drawTilesAndCoins()
+void drawTiles()
 {
     for (int layer = 0; layer < layerCount; layer++)
     {
@@ -534,24 +605,23 @@ void drawTilesAndCoins()
             {
                 if (tiles[layer][row][col][0] != -1)
                 {
-                    // TODO: Find a better way to flip
-                    if (tiles[layer][row][col][1] == 1)
+                    if (tiles[layer][row][col][0] == FLAG_ID)
                     {
-                        iMirrorImage(&tileImages[tiles[layer][row][col][0]], HORIZONTAL);
+                        drawTile(layer, row, col, &flagSprite);
                     }
-                    if (tiles[layer][row][col][2] == 1)
+                    else if (tiles[layer][row][col][0] == COIN_ID)
                     {
-                        iMirrorImage(&tileImages[tiles[layer][row][col][0]], VERTICAL);
+                        if (!checkIfAlreadyCollected(row, col, collectedCoins, &collectedCoinCount))
+                            drawTile(layer, row, col, &coinSprite);
                     }
-                    iShowLoadedImage(col * TILE_SIZE, (ROWS - row - 1) * TILE_SIZE, &tileImages[tiles[layer][row][col][0]]);
-                    // Reset the image.
-                    if (tiles[layer][row][col][1] == 1)
+                    else if (tiles[layer][row][col][0] == DIAMOND_ID)
                     {
-                        iMirrorImage(&tileImages[tiles[layer][row][col][0]], HORIZONTAL);
+                        if (!checkIfAlreadyCollected(row, col, collectedDiamonds, &collectedDiamondCount))
+                            drawTile(layer, row, col);
                     }
-                    if (tiles[layer][row][col][2] == 1)
+                    else
                     {
-                        iMirrorImage(&tileImages[tiles[layer][row][col][0]], VERTICAL);
+                        drawTile(layer, row, col);
                     }
                 }
 
@@ -566,6 +636,41 @@ void drawTilesAndCoins()
             }
         }
     }
+}
+
+void mirrorTile(int tileId, MirrorState mirrorState, Sprite *sprite = NULL)
+{
+    if (sprite == NULL)
+        iMirrorImage(&tileImages[tileId], mirrorState);
+    else
+        iMirrorSprite(sprite, mirrorState);
+}
+
+void drawTile(int layer, int row, int col, Sprite *sprite)
+{
+    int tileId = tiles[layer][row][col][0];
+    int flipH = tiles[layer][row][col][1];
+    int flipV = tiles[layer][row][col][2];
+    int x = col * TILE_SIZE;
+    int y = (ROWS - row - 1) * TILE_SIZE;
+    if (flipH)
+        mirrorTile(tileId, HORIZONTAL, sprite);
+    if (flipV)
+        mirrorTile(tileId, VERTICAL, sprite);
+    if (sprite == NULL)
+    {
+        iShowLoadedImage(x, y, &tileImages[tileId]);
+    }
+    else
+    {
+        iSetSpritePosition(sprite, x, y);
+        iShowSprite(sprite);
+    }
+    // Mirror the tile back to its original state.
+    if (flipH)
+        mirrorTile(tileId, HORIZONTAL, sprite);
+    if (flipV)
+        mirrorTile(tileId, VERTICAL, sprite);
 }
 
 void drawButton(Button button)
@@ -740,6 +845,13 @@ void iMouse(int button, int state, int mx, int my)
             }
         }
     }
+    // // For debugging purposes.
+    // if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN)
+    // {
+    //     animateToX = mx;
+    //     player.y = my;
+    //     iResumeTimer(horizontalMovementTimer);
+    // }
 }
 
 void iMouseMove(int mx, int my)
@@ -767,10 +879,10 @@ int main(int argc, char *argv[])
 
     gameStateUpdateTimer = iSetTimer(10, gameStateUpdate);
     horizontalMovementTimer = iSetTimer(10, animateHorizontalMovement);
-    coinAnimationTimer = iSetTimer(100, animateSprites);
+    spriteAnimationTimer = iSetTimer(200, animateSprites);
     iPauseTimer(gameStateUpdateTimer);
     iPauseTimer(horizontalMovementTimer);
-    iPauseTimer(coinAnimationTimer);
+    iPauseTimer(spriteAnimationTimer);
 
     iOpenWindow(WIDTH, HEIGHT, TITLE);
 
