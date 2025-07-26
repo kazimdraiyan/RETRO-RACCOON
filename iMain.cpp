@@ -39,6 +39,9 @@
 #define DOES_COLLIDE_FLAG 0x10000000
 
 #define FLAG_ID 111
+#define FULL_LIFE_ID 44
+#define NO_LIFE_ID 46
+#define TRAP_ID 68
 #define COIN_ID 151
 #define DIAMOND_ID 67
 
@@ -114,6 +117,7 @@ int mouseY = 0;
 
 // * Asset management variables
 Image background_image;
+Image lifeImages[2];
 Image tileImages[180]; // TODO: Load only the tiles that are needed.
 Image coinFrames[2];
 Sprite coinSprite;
@@ -129,12 +133,9 @@ int tiles[MAX_LAYER_COUNT][ROWS][COLUMNS][3] = {};
 int doesCollideArray[ROWS][COLUMNS] = {};
 int coinArray[ROWS][COLUMNS] = {};
 int diamondArray[ROWS][COLUMNS] = {};
+int lifeArray[ROWS][COLUMNS] = {};
+int trapArray[ROWS][COLUMNS] = {};
 
-int collectedCoinCount = 0;
-int collectedDiamondCount = 0;
-// Stores the row and column of the collected coins and diamonds.
-int collectedCoins[MAX_COLLECTABLE_COUNT][2] = {};
-int collectedDiamonds[MAX_COLLECTABLE_COUNT][2] = {};
 
 // * Game state variables
 int gameStateUpdateTimer;
@@ -144,10 +145,19 @@ Player player;
 int animateToX = player.x;
 double velocityY = 0;
 int score = 0;
+int lifeCount = 3;
 // TODO: Include these in the player struct.
 // TODO: Handle the jump in a better way?
 bool isJumping = false; // isJumping tells whether the player just jumped or not.
 int jumpAnimationFrame = 0;
+
+// Stores the row and column of the collected coins and diamonds.
+int collectedCoins[MAX_COLLECTABLE_COUNT][2] = {};
+int collectedDiamonds[MAX_COLLECTABLE_COUNT][2] = {};
+int collectedLife[MAX_COLLECTABLE_COUNT][2] = {};
+int collectedCoinCount = 0;
+int collectedDiamondCount = 0;
+int collectedLifeCount = 0;
 
 // * These functions acts as UI Widgets.
 void drawMenuPage();
@@ -158,6 +168,7 @@ void drawWinPage();
 void drawGameOverPage();
 
 void drawScore();
+void drawLifeCount();
 void drawTile(int layer, int row, int col, Sprite *sprite = NULL);
 void drawTiles();
 void drawButton(Button button);
@@ -185,6 +196,8 @@ void loadLevel(int level)
     initializeGridArrays(doesCollideArray, 0);
     initializeGridArrays(coinArray, 0);
     initializeGridArrays(diamondArray, 0);
+    initializeGridArrays(lifeArray, 0);
+    initializeGridArrays(trapArray, 0);
 
     // Initialize the collected collectables.
     for (int i = 0; i < MAX_COLLECTABLE_COUNT; i++)
@@ -193,6 +206,8 @@ void loadLevel(int level)
         collectedCoins[i][1] = -1;
         collectedDiamonds[i][0] = -1;
         collectedDiamonds[i][1] = -1;
+        collectedLife[i][0] = -1;
+        collectedLife[i][1] = -1;
     }
 
     char level_metadata_filename[100];
@@ -258,6 +273,14 @@ void loadLevel(int level)
                     {
                         diamondArray[row][col] = 1;
                     }
+                    else if (id == TRAP_ID)
+                    {
+                        trapArray[row][col] = 1;
+                    }
+                    else if (id == FULL_LIFE_ID)
+                    {
+                        lifeArray[row][col] = 1;
+                    }
                 }
                 cell = strtok(NULL, ",\n");
                 col++;
@@ -286,6 +309,10 @@ void loadAssets()
         iLoadImage(&tileImages[i], filename);
         iResizeImage(&tileImages[i], TILE_SIZE, TILE_SIZE);
     }
+
+    // Load life images
+    iLoadImage(&lifeImages[0], "assets/images/life_tiles/no_life.png");
+    iLoadImage(&lifeImages[1], "assets/images/life_tiles/full_life.png");
 
     // Load coin sprite
     iLoadFramesFromFolder(coinFrames, "assets/sprites/coin/");
@@ -325,6 +352,7 @@ void resetGame()
     isJumping = false;
     jumpAnimationFrame = 0;
     isResumable = 0;
+    lifeCount = 3;
 
     sprintf(scoreText, "Score: %d", score);
     score = 0;
@@ -332,12 +360,15 @@ void resetGame()
     // Reset the collected collectables.
     collectedCoinCount = 0;
     collectedDiamondCount = 0;
+    collectedLifeCount = 0;
     for (int i = 0; i < MAX_COLLECTABLE_COUNT; i++)
     {
         collectedCoins[i][0] = -1;
         collectedCoins[i][1] = -1;
         collectedDiamonds[i][0] = -1;
         collectedDiamonds[i][1] = -1;
+        collectedLife[i][0] = -1;
+        collectedLife[i][1] = -1;
     }
 }
 
@@ -420,11 +451,6 @@ void gameStateUpdate()
 
     moveVerticallyTillCollision(delY);
 
-    // if (player.y <= 0)
-    // {
-    //     resetGame();
-    //     currentPage = GAME_OVER_PAGE;
-    // }
     if (player.x + player.width > WIDTH)
     {
         sprintf(levelCompletionText, "Level %d Completed", currentLevel);
@@ -483,7 +509,7 @@ int checkIfAlreadyCollected(int row, int col, int collectedCollectableArray[][2]
     return 0;
 }
 
-void checkAndCollect(int collectableArray[ROWS][COLUMNS], int collectableId, int collectableScore, int collectedCollectableArray[][2], int *collectedCollectableCount)
+void checkAndCollect(int collectableArray[ROWS][COLUMNS], int collectableId, int collectableScore, int collectedCollectableArray[][2], int *collectedCollectableCount, int isLife = 0)
 {
     int row = ROWS - (int)(player.y / TILE_SIZE) - 1;
     int col = (int)(animateToX / TILE_SIZE);
@@ -496,6 +522,8 @@ void checkAndCollect(int collectableArray[ROWS][COLUMNS], int collectableId, int
             collectedCollectableArray[*collectedCollectableCount][0] = row;
             collectedCollectableArray[*collectedCollectableCount][1] = col;
             (*collectedCollectableCount)++;
+            if (isLife && lifeCount < 3) // If the player has 3 lives, collect the life but don't increment the count.
+                lifeCount++;
         }
     }
 }
@@ -504,6 +532,32 @@ void updateAllCollectables()
 {
     checkAndCollect(coinArray, COIN_ID, COIN_SCORE, collectedCoins, &collectedCoinCount);
     checkAndCollect(diamondArray, DIAMOND_ID, DIAMOND_SCORE, collectedDiamonds, &collectedDiamondCount);
+    checkAndCollect(lifeArray, FULL_LIFE_ID, 0, collectedLife, &collectedLifeCount, 1);
+}
+
+void checkCollisionWithTraps()
+{
+    int row = ROWS - (int)(player.y / TILE_SIZE) - 1;
+    int col = (int)(animateToX / TILE_SIZE);
+
+    if (trapArray[row][col] && player.x == animateToX)
+    {
+        // TODO: Add an animation for the trap.
+        // TODO: Check if this is the correct way to reset the player.
+        player.x = PLAYER_INITIAL_X;
+        player.y = PLAYER_INITIAL_Y;
+        animateToX = player.x;
+        velocityY = 0;
+        player.direction = RIGHT;
+        isJumping = false;
+        jumpAnimationFrame = 0;
+        lifeCount--;
+        if (lifeCount == 0)
+        {
+            resetGame();
+            currentPage = GAME_OVER_PAGE;
+        }
+    }
 }
 
 void iDraw()
@@ -538,7 +592,9 @@ void iDraw()
 
     // TODO: Optimize by redrawing the widgets only when they're changed.
     updateAllCollectables();
+    checkCollisionWithTraps();
     drawScore();
+    drawLifeCount();
 
     // * Page rendering
     if (currentPage == MENU_PAGE)
@@ -592,7 +648,14 @@ void drawScore()
     {
         sprintf(scoreText, "Score: %d", score);
     }
-    iShowText(WIDTH - 210, HEIGHT - 78, scoreText, "assets/fonts/minecraft_ten.ttf", 40);
+    iShowText(30, HEIGHT - 60, scoreText, "assets/fonts/minecraft_ten.ttf", 48);
+}
+
+void drawLifeCount()
+{
+    iShowLoadedImage(WIDTH - 80, HEIGHT - 72, &lifeImages[lifeCount > 0 ? 1 : 0]);
+    iShowLoadedImage(WIDTH - 135, HEIGHT - 72, &lifeImages[lifeCount > 1 ? 1 : 0]);
+    iShowLoadedImage(WIDTH - 190, HEIGHT - 72, &lifeImages[lifeCount > 2 ? 1 : 0]);
 }
 
 void drawTiles()
@@ -617,6 +680,11 @@ void drawTiles()
                     else if (tiles[layer][row][col][0] == DIAMOND_ID)
                     {
                         if (!checkIfAlreadyCollected(row, col, collectedDiamonds, &collectedDiamondCount))
+                            drawTile(layer, row, col);
+                    }
+                    else if (tiles[layer][row][col][0] == FULL_LIFE_ID)
+                    {
+                        if (!checkIfAlreadyCollected(row, col, collectedLife, &lifeCount))
                             drawTile(layer, row, col);
                     }
                     else
