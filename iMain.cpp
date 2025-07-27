@@ -446,6 +446,54 @@ struct Button buttons[50] = {
      { changeLevel(5); },
      false},
 }; // TODO: Add extra dimension for pages?
+ 
+// * Background music management functions
+void playBackgroundMusic(int musicType)
+{
+    // Stop any currently playing background music
+    if (isBackgroundMusicPlaying)
+    {
+        iStopSound(backgroundMusicChannel);
+        isBackgroundMusicPlaying = false;
+    }
+
+    const char *musicFile;
+    if (musicType == 0) // Menu music
+    {
+        musicFile = "assets/sounds/menu_bg.wav";
+        currentBackgroundMusic = 0;
+    }
+    else if (musicType == 1) // Game music
+    {
+        musicFile = "assets/sounds/game_bg.wav";
+        currentBackgroundMusic = 1;
+    }
+    else
+    {
+        return; // Invalid music type
+    }
+
+    backgroundMusicChannel = iPlaySound(musicFile, true, musicType == 0 ? 50 : 25); // Game music volume is lower than the menu music volume.
+    isBackgroundMusicPlaying = true;
+}
+
+void stopBackgroundMusic()
+{
+    if (isBackgroundMusicPlaying)
+    {
+        iStopSound(backgroundMusicChannel);
+        isBackgroundMusicPlaying = false;
+        currentBackgroundMusic = -1;
+    }
+}
+
+void switchBackgroundMusic(int newMusicType)
+{
+    if (currentBackgroundMusic != newMusicType)
+    {
+        playBackgroundMusic(newMusicType);
+    }
+}
 
 // * Game logic functions
 // TODO: Clean the if-elses.
@@ -624,54 +672,6 @@ void checkCollisionWithTraps()
     }
 }
 
-// * Background music management functions
-void playBackgroundMusic(int musicType)
-{
-    // Stop any currently playing background music
-    if (isBackgroundMusicPlaying)
-    {
-        iStopSound(backgroundMusicChannel);
-        isBackgroundMusicPlaying = false;
-    }
-
-    const char *musicFile;
-    if (musicType == 0) // Menu music
-    {
-        musicFile = "assets/sounds/menu_bg.wav";
-        currentBackgroundMusic = 0;
-    }
-    else if (musicType == 1) // Game music
-    {
-        musicFile = "assets/sounds/game_bg.wav";
-        currentBackgroundMusic = 1;
-    }
-    else
-    {
-        return; // Invalid music type
-    }
-
-    backgroundMusicChannel = iPlaySound(musicFile, true, musicType == 0 ? 50 : 25); // Game music volume is lower than the menu music volume.
-    isBackgroundMusicPlaying = true;
-}
-
-void stopBackgroundMusic()
-{
-    if (isBackgroundMusicPlaying)
-    {
-        iStopSound(backgroundMusicChannel);
-        isBackgroundMusicPlaying = false;
-        currentBackgroundMusic = -1;
-    }
-}
-
-void switchBackgroundMusic(int newMusicType)
-{
-    if (currentBackgroundMusic != newMusicType)
-    {
-        playBackgroundMusic(newMusicType);
-    }
-}
-
 void iDraw()
 {
     if (isFirstDraw)
@@ -796,7 +796,7 @@ void drawTiles()
                     }
                     else if (tiles[layer][row][col][0] == FULL_LIFE_ID)
                     {
-                        if (!checkIfAlreadyCollected(row, col, collectedLife, &lifeCount))
+                        if (!checkIfAlreadyCollected(row, col, collectedLife, &collectedLifeCount))
                             drawTile(layer, row, col);
                     }
                     else
