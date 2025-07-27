@@ -1,9 +1,12 @@
 #include "iGraphics.h"
 #include "iFont.h"
+#include "iSound.h"
 
 // * Bugs
 // TODO: Bug: Player moving to the right on its own.
 // TODO: Reckheck pausing mechanism.
+// TODO: Resume button cilckable even if it's not shown on the screen.
+// TODO: Life bugs.
 
 // * Optimization
 // TODO: Optimize asset loading.
@@ -19,7 +22,9 @@
 // TODO: Remove the printf statements after finishing the game.
 // TODO: Add loading screen.
 // TODO: Make all snake_case variables camelCase.
+// TODO: Turn all boolean ints into booleans.
 // TODO: Sprite image count marco instead of hardcoding.
+// TODO: fclose the files.
 
 // ? How often the iDraw() function is called? Is it constant or device dependent?
 
@@ -51,7 +56,6 @@
 #define PLAYER_INITIAL_X 200
 #define PLAYER_INITIAL_Y 300
 #define X_ANIMATION_DEL_X 5
-#define GRAVITY 80
 
 // TODO: Learn more about enum.
 enum Direction
@@ -94,6 +98,7 @@ struct Button
     int x_offset;
     Page page;
     void (*onClick)(void);
+    bool isHovered;
 };
 
 struct Player
@@ -136,6 +141,10 @@ int diamondArray[ROWS][COLUMNS] = {};
 int lifeArray[ROWS][COLUMNS] = {};
 int trapArray[ROWS][COLUMNS] = {};
 
+// * Sound management variables
+int backgroundMusicChannel = -1;
+int currentBackgroundMusic = -1; // -1: none, 0: menu, 1: game
+bool isBackgroundMusicPlaying = false;
 
 // * Game state variables
 int gameStateUpdateTimer;
@@ -149,7 +158,9 @@ int lifeCount = 3;
 // TODO: Include these in the player struct.
 // TODO: Handle the jump in a better way?
 bool isJumping = false; // isJumping tells whether the player just jumped or not.
+bool isOnAir = false;
 int jumpAnimationFrame = 0;
+double gravity = 80;
 
 // Stores the row and column of the collected coins and diamonds.
 int collectedCoins[MAX_COLLECTABLE_COUNT][2] = {};
@@ -171,7 +182,12 @@ void drawScore();
 void drawLifeCount();
 void drawTile(int layer, int row, int col, Sprite *sprite = NULL);
 void drawTiles();
-void drawButton(Button button);
+void drawButton(Button &button);
+
+// * Background music management functions
+void playBackgroundMusic(int musicType);
+void stopBackgroundMusic();
+void switchBackgroundMusic(int newMusicType);
 
 // * Initialization functions
 void initializeGridArrays(int array[ROWS][COLUMNS], int value)
@@ -337,6 +353,9 @@ void loadAssets()
     iResizeSprite(&playerJumpSprite, TILE_SIZE, TILE_SIZE);
 
     iInitializeFont();
+    iInitializeSound();
+
+    playBackgroundMusic(0); // Menu music
 }
 
 void resetGame()
@@ -378,30 +397,54 @@ void changeLevel(int level)
     currentPage = GAME_PAGE;
     currentLevel = level;
     loadLevel(level);
+
+    switchBackgroundMusic(1); // Game music
 }
 
 struct Button buttons[50] = {
     {WIDTH - 400, 420, 380, 80, {0, 0, 0}, {200, 200, 200}, "RESUME", 40, 2, MENU_PAGE, []()
-     { currentPage = GAME_PAGE; }},
+     {
+         currentPage = GAME_PAGE;
+         switchBackgroundMusic(1); // Game music
+     },
+     false},
     {WIDTH - 400, 320, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVELS", 40, 10, MENU_PAGE, []()
-     { currentPage = LEVELS_PAGE; }},
+     {
+         currentPage = LEVELS_PAGE;
+         switchBackgroundMusic(0); // Menu music
+     },
+     false},
     {WIDTH - 400, 220, 380, 80, {0, 0, 0}, {200, 200, 200}, "HIGH SCORES", 40, 24, MENU_PAGE, []()
-     { currentPage = HIGH_SCORES_PAGE; }},
+     {
+         currentPage = HIGH_SCORES_PAGE;
+         switchBackgroundMusic(0); // Menu music
+     },
+     false},
     {WIDTH - 400, 120, 380, 80, {0, 0, 0}, {200, 200, 200}, "OPTIONS", 40, 8, MENU_PAGE, []()
-     { currentPage = OPTIONS_PAGE; }},
+     {
+         currentPage = OPTIONS_PAGE;
+         switchBackgroundMusic(0); // Menu music
+     },
+     false},
     {WIDTH - 400, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "EXIT", 40, 6, MENU_PAGE, []()
-     { iCloseWindow(); }},
+     { iCloseWindow(); },
+     false},
 
     {WIDTH / 2 - 180, 520, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 1", 40, 8, LEVELS_PAGE, []()
-     { changeLevel(1); }},
+     { changeLevel(1); },
+     false},
     {WIDTH / 2 - 180, 420, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 2", 40, 8, LEVELS_PAGE, []()
-     { changeLevel(2); }},
+     { changeLevel(2); },
+     false},
     {WIDTH / 2 - 180, 320, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 3", 40, 8, LEVELS_PAGE, []()
-     { changeLevel(3); }},
+     { changeLevel(3); },
+     false},
     {WIDTH / 2 - 180, 220, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 4", 40, 8, LEVELS_PAGE, []()
-     { changeLevel(4); }},
+     { changeLevel(4); },
+     false},
     {WIDTH / 2 - 180, 120, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 5", 40, 8, LEVELS_PAGE, []()
-     { changeLevel(5); }},
+     { changeLevel(5); },
+     false},
 }; // TODO: Add extra dimension for pages?
 
 // * Game logic functions
@@ -414,6 +457,7 @@ void moveVerticallyTillCollision(double delY)
     {
         player.y = 0;
         velocityY = 0;
+        isOnAir = false;
     }
     else if (player.y + player.height + delY > HEIGHT) // Collision with the top of the screen.
     {
@@ -428,6 +472,7 @@ void moveVerticallyTillCollision(double delY)
         {
             player.y = (row + 1) * TILE_SIZE;
             velocityY = 0;
+            isOnAir = false;
         }
         else if (doesCollideArray[ROWS - row - 2][col]) // Collision with the tile above the player.
         {
@@ -446,7 +491,7 @@ void gameStateUpdate()
     // ? Store these as macros?
     double delT = 0.08;
 
-    velocityY -= GRAVITY * delT; // Apply gravity
+    velocityY -= gravity * delT; // Apply gravity
     double delY = velocityY * delT;
 
     moveVerticallyTillCollision(delY);
@@ -455,6 +500,10 @@ void gameStateUpdate()
     {
         sprintf(levelCompletionText, "Level %d Completed", currentLevel);
         resetGame();
+
+        stopBackgroundMusic();
+        iPlaySound("assets/sounds/level_complete.wav", 0, 80);
+
         currentPage = WIN_PAGE;
         isResumable = 0;
     }
@@ -502,14 +551,15 @@ int checkIfAlreadyCollected(int row, int col, int collectedCollectableArray[][2]
 {
     for (int i = 0; i < *collectedCollectableCount; i++)
     {
-        if (collectedCollectableArray[i][0] == row && collectedCollectableArray[i][1] == col) {
+        if (collectedCollectableArray[i][0] == row && collectedCollectableArray[i][1] == col)
+        {
             return 1;
         }
     }
     return 0;
 }
 
-void checkAndCollect(int collectableArray[ROWS][COLUMNS], int collectableId, int collectableScore, int collectedCollectableArray[][2], int *collectedCollectableCount, int isLife = 0)
+void checkAndCollect(int collectableArray[ROWS][COLUMNS], int collectableId, int collectableScore, int collectedCollectableArray[][2], int *collectedCollectableCount, int isLife = 0, const char *soundPath = NULL, int volume = 100)
 {
     int row = ROWS - (int)(player.y / TILE_SIZE) - 1;
     int col = (int)(animateToX / TILE_SIZE);
@@ -524,15 +574,18 @@ void checkAndCollect(int collectableArray[ROWS][COLUMNS], int collectableId, int
             (*collectedCollectableCount)++;
             if (isLife && lifeCount < 3) // If the player has 3 lives, collect the life but don't increment the count.
                 lifeCount++;
+
+            if (soundPath != NULL)
+                iPlaySound(soundPath, 0, volume);
         }
     }
 }
 
 void updateAllCollectables()
 {
-    checkAndCollect(coinArray, COIN_ID, COIN_SCORE, collectedCoins, &collectedCoinCount);
-    checkAndCollect(diamondArray, DIAMOND_ID, DIAMOND_SCORE, collectedDiamonds, &collectedDiamondCount);
-    checkAndCollect(lifeArray, FULL_LIFE_ID, 0, collectedLife, &collectedLifeCount, 1);
+    checkAndCollect(coinArray, COIN_ID, COIN_SCORE, collectedCoins, &collectedCoinCount, 0, "assets/sounds/coin.wav", 70);
+    checkAndCollect(diamondArray, DIAMOND_ID, DIAMOND_SCORE, collectedDiamonds, &collectedDiamondCount, 0, "assets/sounds/diamond.wav", 100);
+    checkAndCollect(lifeArray, FULL_LIFE_ID, 0, collectedLife, &collectedLifeCount, 1, "assets/sounds/life.wav", 70);
 }
 
 void checkCollisionWithTraps()
@@ -548,7 +601,8 @@ void checkCollisionWithTraps()
         player.y = PLAYER_INITIAL_Y;
         animateToX = player.x;
         velocityY = 0;
-        if (player.direction == LEFT) {
+        if (player.direction == LEFT)
+        {
             iMirrorSprite(&playerIdleSprite, HORIZONTAL);
             iMirrorSprite(&playerJumpSprite, HORIZONTAL);
         }
@@ -556,11 +610,65 @@ void checkCollisionWithTraps()
         isJumping = false;
         jumpAnimationFrame = 0;
         lifeCount--;
+
+        if (lifeCount > 0)
+            iPlaySound("assets/sounds/hurt.wav", 0, 50);
+
         if (lifeCount == 0)
         {
             resetGame();
+            stopBackgroundMusic();
+            iPlaySound("assets/sounds/game_over.wav", 0, 80);
             currentPage = GAME_OVER_PAGE;
         }
+    }
+}
+
+// * Background music management functions
+void playBackgroundMusic(int musicType)
+{
+    // Stop any currently playing background music
+    if (isBackgroundMusicPlaying)
+    {
+        iStopSound(backgroundMusicChannel);
+        isBackgroundMusicPlaying = false;
+    }
+
+    const char *musicFile;
+    if (musicType == 0) // Menu music
+    {
+        musicFile = "assets/sounds/menu_bg.wav";
+        currentBackgroundMusic = 0;
+    }
+    else if (musicType == 1) // Game music
+    {
+        musicFile = "assets/sounds/game_bg.wav";
+        currentBackgroundMusic = 1;
+    }
+    else
+    {
+        return; // Invalid music type
+    }
+
+    backgroundMusicChannel = iPlaySound(musicFile, true, musicType == 0 ? 50 : 25); // Game music volume is lower than the menu music volume.
+    isBackgroundMusicPlaying = true;
+}
+
+void stopBackgroundMusic()
+{
+    if (isBackgroundMusicPlaying)
+    {
+        iStopSound(backgroundMusicChannel);
+        isBackgroundMusicPlaying = false;
+        currentBackgroundMusic = -1;
+    }
+}
+
+void switchBackgroundMusic(int newMusicType)
+{
+    if (currentBackgroundMusic != newMusicType)
+    {
+        playBackgroundMusic(newMusicType);
     }
 }
 
@@ -736,17 +844,26 @@ void drawTile(int layer, int row, int col, Sprite *sprite)
         mirrorTile(tileId, VERTICAL, sprite);
 }
 
-void drawButton(Button button)
+void drawButton(Button &button)
 {
     float alpha;
-    if (mouseX >= button.x && mouseX <= button.x + button.width && mouseY >= button.y && mouseY <= button.y + button.height)
+    bool isHovering = mouseX >= button.x && mouseX <= button.x + button.width && mouseY >= button.y && mouseY <= button.y + button.height;
+
+    if (isHovering)
     {
         alpha = 0.7; // Hover effect
+        if (!button.isHovered)
+        {
+            iPlaySound("assets/sounds/menu_hover.wav", 0, 5);
+        }
+        button.isHovered = true;
     }
     else
     {
         alpha = 0.9;
+        button.isHovered = false;
     }
+
     iSetTransparentColor(button.bg_color.red, button.bg_color.green, button.bg_color.blue, alpha);
     iFilledRectangle(button.x, button.y, button.width, button.height);
 
@@ -833,6 +950,7 @@ void iKeyboard(unsigned char key, int state)
     case 27: // Escape key
         currentPage = MENU_PAGE;
         iPauseTimer(gameStateUpdateTimer);
+        switchBackgroundMusic(0); // Switch to menu music
         break;
     default:
         break;
@@ -851,9 +969,14 @@ void iSpecialKeyboard(unsigned char key, int state)
     {
     case GLUT_KEY_UP:
     {
-        velocityY = 120;
-        isJumping = true;
-        jumpAnimationFrame = 0;
+        if (!isOnAir)
+        {
+            iPlaySound("assets/sounds/jump.wav", 0, 50);
+            velocityY = 150;
+            isJumping = true;
+            jumpAnimationFrame = 0;
+            isOnAir = true;
+        }
         break;
     }
     case GLUT_KEY_LEFT:
@@ -904,6 +1027,7 @@ void iMouse(int button, int state, int mx, int my)
             if (buttons[i].page == currentPage && mx >= buttons[i].x && mx <= buttons[i].x + buttons[i].width && my >= buttons[i].y && my <= buttons[i].y + buttons[i].height)
             {
                 printf("Clicked button: %s\n", buttons[i].text);
+                iPlaySound("assets/sounds/menu_click.wav", 0, 30);
                 buttons[i].onClick();
             }
         }
@@ -911,9 +1035,7 @@ void iMouse(int button, int state, int mx, int my)
     // // For debugging purposes.
     // if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN)
     // {
-    //     animateToX = mx;
-    //     player.y = my;
-    //     iResumeTimer(horizontalMovementTimer);
+    //     gravity *= -1;
     // }
 }
 
