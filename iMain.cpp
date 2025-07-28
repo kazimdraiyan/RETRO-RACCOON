@@ -3,10 +3,9 @@
 #include "iSound.h"
 
 // * Bugs
-// TODO: Bug: Player moving to the right on its own.
 // TODO: Reckheck pausing mechanism.
 // TODO: Resume button cilckable even if it's not shown on the screen.
-// TODO: Life bugs.
+// TODO: Player direction bug.
 
 // * Optimization
 // TODO: Optimize asset loading.
@@ -46,12 +45,11 @@
 #define FLAG_ID 111
 #define FULL_LIFE_ID 44
 #define NO_LIFE_ID 46
-#define TRAP_ID 68
 #define COIN_ID 151
 #define DIAMOND_ID 67
 
 #define COIN_SCORE 10
-#define DIAMOND_SCORE 20
+#define DIAMOND_SCORE 50
 
 #define PLAYER_INITIAL_X 200
 #define PLAYER_INITIAL_Y 300
@@ -133,13 +131,14 @@ Sprite playerIdleSprite;
 Image playerJumpFrames[5];
 Sprite playerJumpSprite;
 int loadedLevels[LEVEL_COUNT] = {0};
-int layerCount;
+int layerCount[LEVEL_COUNT] = {0};
 int tiles[MAX_LAYER_COUNT][ROWS][COLUMNS][3] = {};
 int doesCollideArray[ROWS][COLUMNS] = {};
 int coinArray[ROWS][COLUMNS] = {};
 int diamondArray[ROWS][COLUMNS] = {};
 int lifeArray[ROWS][COLUMNS] = {};
 int trapArray[ROWS][COLUMNS] = {};
+int trapIds[] = {68, 33, 34, 35, 53, 54, 55, 73, 74, 75};
 
 // * Sound management variables
 int backgroundMusicChannel = -1;
@@ -189,6 +188,8 @@ void playBackgroundMusic(int musicType);
 void stopBackgroundMusic();
 void switchBackgroundMusic(int newMusicType);
 
+bool isTrap(int id);
+
 // * Initialization functions
 void initializeGridArrays(int array[ROWS][COLUMNS], int value)
 {
@@ -203,10 +204,10 @@ void initializeGridArrays(int array[ROWS][COLUMNS], int value)
 
 void loadLevel(int level)
 {
-    if (loadedLevels[level - 1] == 1)
-    {
-        return;
-    }
+    // if (loadedLevels[level - 1] == 1)
+    // {
+    //     return;
+    // }
 
     // ? Should I initialize the arrays here?
     initializeGridArrays(doesCollideArray, 0);
@@ -235,10 +236,10 @@ void loadLevel(int level)
         printf("Level metadata file open failed\n");
         return;
     }
-    fscanf(level_metadata_file, "%d", &layerCount);
+    fscanf(level_metadata_file, "%d", &layerCount[level - 1]);
     fclose(level_metadata_file);
 
-    for (int layer = 0; layer < layerCount; layer++)
+    for (int layer = 0; layer < layerCount[level - 1]; layer++)
     {
         char layer_file_name[100];
         sprintf(layer_file_name, "levels/level%d/layer_%d_customized.csv", level, layer);
@@ -289,7 +290,7 @@ void loadLevel(int level)
                     {
                         diamondArray[row][col] = 1;
                     }
-                    else if (id == TRAP_ID)
+                    else if (isTrap(id))
                     {
                         trapArray[row][col] = 1;
                     }
@@ -389,6 +390,12 @@ void resetGame()
         collectedLife[i][0] = -1;
         collectedLife[i][1] = -1;
     }
+
+    initializeGridArrays(doesCollideArray, 0);
+    initializeGridArrays(coinArray, 0);
+    initializeGridArrays(diamondArray, 0);
+    initializeGridArrays(lifeArray, 0);
+    initializeGridArrays(trapArray, 0);
 }
 
 void changeLevel(int level)
@@ -496,9 +503,17 @@ void switchBackgroundMusic(int newMusicType)
 }
 
 // * Game logic functions
-// TODO: Clean the if-elses.
-// TODO: Add horizontal collision detection.
-// TODO: Invert velocity for bouncing.
+bool isTrap(int id) {
+    for (int i = 0; i < sizeof(trapIds) / sizeof(trapIds[0]); i++) {
+        if (id == trapIds[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+// TODO: Invert velocity for bouncing?
 void moveVerticallyTillCollision(double delY)
 {
     if (player.y + delY < 0) // Collision with the bottom of the screen.
@@ -772,7 +787,7 @@ void drawLifeCount()
 
 void drawTiles()
 {
-    for (int layer = 0; layer < layerCount; layer++)
+    for (int layer = 0; layer < layerCount[currentLevel - 1]; layer++)
     {
         for (int row = 0; row < ROWS; row++)
         {
