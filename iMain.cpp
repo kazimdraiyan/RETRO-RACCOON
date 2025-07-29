@@ -76,6 +76,13 @@ enum Page
     CREDITS_PAGE,
 };
 
+enum MusicType
+{
+    MENU_MUSIC,
+    GAME_MUSIC,
+    NONE
+};
+
 struct Color
 {
     int red;
@@ -90,11 +97,27 @@ struct Button
     int y;
     int width;
     int height;
-    Color bg_color;
-    Color text_color;
+    Color bgColor;
+    Color textColor;
     char *text;
     int fontSize;
-    int x_offset;
+    int xOffset;
+    int yOffset;
+    Page page;
+    void (*onClick)(void);
+    bool isHovered;
+};
+
+struct Icon
+{
+    int x;
+    int y;
+    int width;
+    int height;
+    Color bgColor;
+    Image *image;
+    int xOffset;
+    int yOffset;
     Page page;
     void (*onClick)(void);
     bool isHovered;
@@ -123,6 +146,8 @@ int mouseY = 0;
 Image background_image;
 Image yellowStarImage;
 Image whiteStarImage;
+Image audioOffImage;
+Image audioOnImage;
 Image lifeImages[2];
 Image tileImages[180]; // TODO: Load only the tiles that are needed.
 Image coinFrames[2];
@@ -145,8 +170,10 @@ int trapIds[] = {68, 33, 34, 35, 53, 54, 55, 73, 74, 75};
 
 // * Sound management variables
 int backgroundMusicChannel = -1;
-int currentBackgroundMusic = -1; // -1: none, 0: menu, 1: game
+MusicType currentMusicType = MENU_MUSIC;
 bool isBackgroundMusicPlaying = false;
+bool isMusicOn = true;
+bool isSoundOn = true;
 
 // * Game state variables
 int gameStateUpdateTimer;
@@ -190,9 +217,9 @@ void drawTiles();
 void drawButton(Button &button);
 
 // * Background music management functions
-void playBackgroundMusic(int musicType);
+void playBackgroundMusic(MusicType musicType);
 void stopBackgroundMusic();
-void switchBackgroundMusic(int newMusicType);
+void switchBackgroundMusic(MusicType newMusicType);
 
 bool isTrap(int id);
 
@@ -337,6 +364,10 @@ void loadAssets()
     iLoadImage(&yellowStarImage, "assets/icons/star_yellow.png");
     iLoadImage(&whiteStarImage, "assets/icons/star_white.png");
 
+    // Load audio off/on images
+    iLoadImage(&audioOffImage, "assets/icons/audio_off.png");
+    iLoadImage(&audioOnImage, "assets/icons/audio_on.png");
+
     // Load life images
     iLoadImage(&lifeImages[0], "assets/special_tiles/no_life.png");
     iLoadImage(&lifeImages[1], "assets/special_tiles/full_life.png");
@@ -366,7 +397,7 @@ void loadAssets()
     iInitializeFont();
     iInitializeSound();
 
-    playBackgroundMusic(0); // Menu music
+    playBackgroundMusic(MENU_MUSIC);
 }
 
 void resetGame()
@@ -431,108 +462,124 @@ void changeLevel(int level)
     currentLevel = level;
     loadLevel(level);
 
-    switchBackgroundMusic(1); // Game music
+    switchBackgroundMusic(GAME_MUSIC);
 }
 
 struct Button buttons[50] = {
-    {WIDTH - 400, 620, 380, 80, {0, 0, 0}, {200, 200, 200}, "RESUME", 40, 2, MENU_PAGE, []()
+    {WIDTH - 400, 620, 380, 80, {0, 0, 0}, {200, 200, 200}, "RESUME", 40, 2, 0, MENU_PAGE, []()
      {
          currentPage = GAME_PAGE;
-         switchBackgroundMusic(1); // Game music
+         switchBackgroundMusic(GAME_MUSIC);
      },
      false},
-    {WIDTH - 400, 520, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVELS", 40, 10, MENU_PAGE, []()
+    {WIDTH - 400, 520, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVELS", 40, 10, 0, MENU_PAGE, []()
      {
          currentPage = LEVELS_PAGE;
-         switchBackgroundMusic(0); // Menu music
      },
      false},
-    {WIDTH - 400, 420, 380, 80, {0, 0, 0}, {200, 200, 200}, "HIGH SCORES", 40, 24, MENU_PAGE, []()
+    {WIDTH - 400, 420, 380, 80, {0, 0, 0}, {200, 200, 200}, "HIGH SCORES", 40, 24, 0, MENU_PAGE, []()
      {
          currentPage = HIGH_SCORES_PAGE;
-         switchBackgroundMusic(0); // Menu music
      },
      false},
-    {WIDTH - 400, 320, 380, 80, {0, 0, 0}, {200, 200, 200}, "OPTIONS", 40, 8, MENU_PAGE, []()
+    {WIDTH - 400, 320, 380, 80, {0, 0, 0}, {200, 200, 200}, "OPTIONS", 40, 8, 0, MENU_PAGE, []()
      {
          currentPage = OPTIONS_PAGE;
-         switchBackgroundMusic(0); // Menu music
      },
      false},
-    {WIDTH - 400, 220, 380, 80, {0, 0, 0}, {200, 200, 200}, "HELP", 40, 8, MENU_PAGE, []()
+    {WIDTH - 400, 220, 380, 80, {0, 0, 0}, {200, 200, 200}, "HELP", 40, 8, 0, MENU_PAGE, []()
      {
          currentPage = HELP_PAGE;
-         switchBackgroundMusic(0); // Menu music
      },
      false},
-    {WIDTH - 400, 120, 380, 80, {0, 0, 0}, {200, 200, 200}, "CREDITS", 40, 8, MENU_PAGE, []()
+    {WIDTH - 400, 120, 380, 80, {0, 0, 0}, {200, 200, 200}, "CREDITS", 40, 8, 0, MENU_PAGE, []()
      {
          currentPage = CREDITS_PAGE;
-         switchBackgroundMusic(0); // Menu music
      },
      false},
-    {WIDTH - 400, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "EXIT", 40, 6, MENU_PAGE, []()
+    {WIDTH - 400, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "EXIT", 40, 6, 0, MENU_PAGE, []()
      { iCloseWindow(); },
      false},
 
-    {WIDTH / 2 - 180, 520, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 1", 40, 8, LEVELS_PAGE, []()
+    {WIDTH / 2 - 180, 500, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 1", 40, 8, 0, LEVELS_PAGE, []()
      { changeLevel(1); },
      false},
-    {WIDTH / 2 - 180, 420, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 2", 40, 8, LEVELS_PAGE, []()
+    {WIDTH / 2 - 180, 400, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 2", 40, 8, 0, LEVELS_PAGE, []()
      { changeLevel(2); },
      false},
-    {WIDTH / 2 - 180, 320, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 3", 40, 8, LEVELS_PAGE, []()
+    {WIDTH / 2 - 180, 300, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 3", 40, 8, 0, LEVELS_PAGE, []()
      { changeLevel(3); },
      false},
-    {WIDTH / 2 - 180, 220, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 4", 40, 8, LEVELS_PAGE, []()
+    {WIDTH / 2 - 180, 200, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 4", 40, 8, 0, LEVELS_PAGE, []()
      { changeLevel(4); },
      false},
-    {WIDTH / 2 - 180, 120, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 5", 40, 8, LEVELS_PAGE, []()
+    {WIDTH / 2 - 180, 100, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 5", 40, 8, 0, LEVELS_PAGE, []()
      { changeLevel(5); },
      false},
 
-    {180, 120, 380, 100, {0, 0, 0}, {200, 200, 200}, "MAIN MENU", 40, 6, GAME_OVER_PAGE, []()
+    {180, 120, 380, 100, {0, 0, 0}, {200, 200, 200}, "MAIN MENU", 40, 6, 0, GAME_OVER_PAGE, []()
      {
          currentPage = MENU_PAGE;
-         switchBackgroundMusic(0); // Menu music
+         switchBackgroundMusic(MENU_MUSIC);
      },
      false},
-    {WIDTH / 2 + 80, 120, 380, 100, {0, 0, 0}, {200, 200, 200}, "TRY AGAIN", 40, 16, GAME_OVER_PAGE, []()
+    {WIDTH / 2 + 80, 120, 380, 100, {0, 0, 0}, {200, 200, 200}, "TRY AGAIN", 40, 16, 0, GAME_OVER_PAGE, []()
      {
          currentPage = GAME_PAGE;
          changeLevel(currentLevel);
-         switchBackgroundMusic(1); // Game music
+         switchBackgroundMusic(GAME_MUSIC);
      },
      false},
 
     // WIN_PAGE
-    {80, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "MAIN MENU", 40, 6, WIN_PAGE, []()
+    {80, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "MAIN MENU", 40, 6, 0, WIN_PAGE, []()
      {
          currentPage = MENU_PAGE;
-         switchBackgroundMusic(0); // Menu music
+         switchBackgroundMusic(MENU_MUSIC);
      },
      false},
-    {WIDTH / 2 - 158, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "PLAY AGAIN", 40, 16, WIN_PAGE, []()
+    {WIDTH / 2 - 158, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "PLAY AGAIN", 40, 16, 0, WIN_PAGE, []()
      {
          currentPage = GAME_PAGE;
          changeLevel(currentLevel);
-         switchBackgroundMusic(1); // Game music
+         switchBackgroundMusic(GAME_MUSIC);
      },
      false},
-    {WIDTH / 2 + 240, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "", 40, 16, WIN_PAGE, []() {}, false}, // Placeholder for the third button
+    {WIDTH / 2 + 240, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "", 40, 16, 0, WIN_PAGE, []() {}, false}, // Placeholder for the third button
 
     // HELP_PAGE
-    {WIDTH - 400, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "BACK", 40, 6, HELP_PAGE, []()
+    {WIDTH - 400, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "BACK", 40, 6, 0, LEVELS_PAGE, []()
      {
          currentPage = MENU_PAGE;
-         switchBackgroundMusic(0); // Menu music
      },
      false},
-
 }; // TODO: Add extra dimension for pages?
 
+struct Icon icons[2] = {
+    // Music on/off
+    {WIDTH / 2 - 100, HEIGHT / 2, 60, 60, {0, 0, 0}, NULL, 0, -3, OPTIONS_PAGE, []()
+     {
+         isMusicOn = !isMusicOn;
+         if (isMusicOn)
+         {
+             playBackgroundMusic(MENU_MUSIC);
+         }
+         else
+         {
+             stopBackgroundMusic();
+         }
+     },
+     false},
+    // Sound on/off
+    {WIDTH / 2 - 100, HEIGHT / 2 - 100, 60, 60, {0, 0, 0}, NULL, 0, -3, OPTIONS_PAGE, []()
+     {
+         isSoundOn = !isSoundOn;
+     },
+     false},
+};
+
 // * Background music management functions
-void playBackgroundMusic(int musicType)
+void playBackgroundMusic(MusicType musicType)
 {
     // Stop any currently playing background music
     if (isBackgroundMusicPlaying)
@@ -541,24 +588,27 @@ void playBackgroundMusic(int musicType)
         isBackgroundMusicPlaying = false;
     }
 
-    const char *musicFile;
-    if (musicType == 0) // Menu music
+    if (isMusicOn)
     {
-        musicFile = "assets/sounds/menu_bg.wav";
-        currentBackgroundMusic = 0;
-    }
-    else if (musicType == 1) // Game music
-    {
-        musicFile = "assets/sounds/game_bg.wav";
-        currentBackgroundMusic = 1;
-    }
-    else
-    {
-        return; // Invalid music type
-    }
+        const char *musicFile;
+        if (musicType == MENU_MUSIC) // Menu music
+        {
+            musicFile = "assets/sounds/menu_bg.wav";
+            currentMusicType = MENU_MUSIC;
+        }
+        else if (musicType == GAME_MUSIC) // Game music
+        {
+            musicFile = "assets/sounds/game_bg.wav";
+            currentMusicType = GAME_MUSIC;
+        }
+        else
+        {
+            return; // Invalid music type
+        }
 
-    backgroundMusicChannel = iPlaySound(musicFile, true, musicType == 0 ? 50 : 25); // Game music volume is lower than the menu music volume.
-    isBackgroundMusicPlaying = true;
+        backgroundMusicChannel = iPlaySound(musicFile, true, musicType == MENU_MUSIC ? 50 : 25); // Game music volume is lower than the menu music volume.
+        isBackgroundMusicPlaying = true;
+    }
 }
 
 void stopBackgroundMusic()
@@ -567,13 +617,13 @@ void stopBackgroundMusic()
     {
         iStopSound(backgroundMusicChannel);
         isBackgroundMusicPlaying = false;
-        currentBackgroundMusic = -1;
+        currentMusicType = NONE;
     }
 }
 
-void switchBackgroundMusic(int newMusicType)
+void switchBackgroundMusic(MusicType newMusicType)
 {
-    if (currentBackgroundMusic != newMusicType)
+    if (currentMusicType != newMusicType)
     {
         playBackgroundMusic(newMusicType);
     }
@@ -689,7 +739,8 @@ void gameStateUpdate()
         resetGame();
 
         stopBackgroundMusic();
-        iPlaySound("assets/sounds/level_complete.wav", 0, 80);
+        if (isSoundOn)
+            iPlaySound("assets/sounds/level_complete.wav", 0, 80);
 
         currentPage = WIN_PAGE;
         isResumable = 0;
@@ -762,7 +813,7 @@ void checkAndCollect(int collectableArray[ROWS][COLUMNS], int collectableId, int
             if (isLife && lifeCount < 3) // If the player has 3 lives, collect the life but don't increment the count.
                 lifeCount++;
 
-            if (soundPath != NULL)
+            if (soundPath != NULL && isSoundOn)
                 iPlaySound(soundPath, 0, volume);
         }
     }
@@ -798,14 +849,15 @@ void checkCollisionWithTraps()
         jumpAnimationFrame = 0;
         lifeCount--;
 
-        if (lifeCount > 0)
+        if (lifeCount > 0 && isSoundOn)
             iPlaySound("assets/sounds/hurt.wav", 0, 50);
 
         if (lifeCount == 0)
         {
             resetGame();
             stopBackgroundMusic();
-            iPlaySound("assets/sounds/game_over.wav", 0, 80);
+            if (isSoundOn)
+                iPlaySound("assets/sounds/game_over.wav", 0, 80);
             currentPage = GAME_OVER_PAGE;
         }
     }
@@ -999,7 +1051,7 @@ void drawButton(Button &button)
     if (isHovering)
     {
         alpha = 0.7; // Hover effect
-        if (!button.isHovered)
+        if (!button.isHovered && isSoundOn)
         {
             iPlaySound("assets/sounds/menu_hover.wav", 0, 5);
         }
@@ -1011,18 +1063,43 @@ void drawButton(Button &button)
         button.isHovered = false;
     }
 
-    iSetTransparentColor(button.bg_color.red, button.bg_color.green, button.bg_color.blue, alpha);
+    iSetTransparentColor(button.bgColor.red, button.bgColor.green, button.bgColor.blue, alpha);
     iFilledRectangle(button.x, button.y, button.width, button.height);
 
     // Approximate text width and height for centering
     int textLen = strlen(button.text);
     int textWidth = (int)(textLen * button.fontSize * 0.6);
     int textHeight = button.fontSize * 0.82;
-    int textX = button.x + (button.width - textWidth) / 2 + button.x_offset;
+    int textX = button.x + (button.width - textWidth) / 2 + button.xOffset;
     int textY = button.y + (button.height - textHeight) / 2;
 
-    iSetColor(button.text_color.red, button.text_color.green, button.text_color.blue);
+    iSetColor(button.textColor.red, button.textColor.green, button.textColor.blue);
     iShowText(textX, textY, button.text, "assets/fonts/minecraft_ten.ttf", button.fontSize);
+}
+
+void drawIcon(Icon &icon)
+{
+    float alpha;
+    bool isHovering = mouseX >= icon.x && mouseX <= icon.x + icon.width && mouseY >= icon.y && mouseY <= icon.y + icon.height;
+
+    if (isHovering)
+    {
+        alpha = 0.7; // Hover effect
+        if (!icon.isHovered && isSoundOn)
+        {
+            iPlaySound("assets/sounds/menu_hover.wav", 0, 5);
+        }
+        icon.isHovered = true;
+    }
+    else
+    {
+        alpha = 0.9;
+        icon.isHovered = false;
+    }
+
+    iSetTransparentColor(icon.bgColor.red, icon.bgColor.green, icon.bgColor.blue, alpha);
+    iFilledRectangle(icon.x, icon.y, icon.width, icon.height);
+    iShowLoadedImage(icon.x + icon.xOffset, icon.y + icon.yOffset, icon.image);
 }
 
 // * UI Widget: Page function definitions
@@ -1050,10 +1127,17 @@ void drawLevelsPage()
     iClear();
     iShowLoadedImage(0, 0, &background_image);
 
+    iSetColor(0, 0, 0);
+    iShowText(WIDTH / 2 - 120, HEIGHT - 100, "Levels", "assets/fonts/minecraft_ten.ttf", 80);
+
     for (int i = 7; i < 12; i++)
     {
         drawButton(buttons[i]);
     }
+
+    // Back button
+    buttons[17].page = LEVELS_PAGE;
+    drawButton(buttons[17]);
 }
 
 void drawHighScoresPage()
@@ -1063,7 +1147,27 @@ void drawHighScoresPage()
 
 void drawOptionsPage()
 {
-    // TODO: Implement options page.
+    iClear();
+    iShowLoadedImage(0, 0, &background_image);
+
+    iSetColor(0, 0, 0);
+    iShowText(WIDTH / 2 - 140, HEIGHT - 100, "Options", "assets/fonts/minecraft_ten.ttf", 80);
+
+    // Music off/on
+    // drawIcon(WIDTH / 2 - 100, HEIGHT / 2, isMusicOn ? &audioOnImage : &audioOffImage, false, 0, -3);
+    icons[0].image = isMusicOn ? &audioOnImage : &audioOffImage;
+    drawIcon(icons[0]);
+    iShowText(WIDTH / 2 - 20, HEIGHT / 2 + 8, "Music", "assets/fonts/minecraft_ten.ttf", 60);
+
+    // Sound off/on
+    // drawIcon(WIDTH / 2 - 100, HEIGHT / 2 - 100, isSoundOn ? &audioOnImage : &audioOffImage, false, 0, -3);
+    icons[1].image = isSoundOn ? &audioOnImage : &audioOffImage;
+    drawIcon(icons[1]);
+    iShowText(WIDTH / 2 - 20, HEIGHT / 2 - 92, "Sound", "assets/fonts/minecraft_ten.ttf", 60);
+
+    // Back button
+    buttons[17].page = OPTIONS_PAGE;
+    drawButton(buttons[17]);
 }
 
 void drawHelpPage()
@@ -1170,7 +1274,7 @@ void drawWinPage()
         {
             currentPage = GAME_PAGE;
             changeLevel(currentLevel + 1);
-            switchBackgroundMusic(1); // Game music
+            switchBackgroundMusic(GAME_MUSIC);
         };
         drawButton(buttons[16]);
     }
@@ -1194,7 +1298,7 @@ void iKeyboard(unsigned char key, int state)
     case 27: // Escape key
         currentPage = MENU_PAGE;
         iPauseTimer(gameStateUpdateTimer);
-        switchBackgroundMusic(0); // Switch to menu music
+        switchBackgroundMusic(MENU_MUSIC);
         break;
     default:
         break;
@@ -1215,7 +1319,8 @@ void iSpecialKeyboard(unsigned char key, int state)
     {
         if (!isOnAir)
         {
-            iPlaySound("assets/sounds/jump.wav", 0, 50);
+            if (isSoundOn)
+                iPlaySound("assets/sounds/jump.wav", 0, 50);
             velocityY = 150;
             isJumping = true;
             jumpAnimationFrame = 0;
@@ -1270,10 +1375,18 @@ void iMouse(int button, int state, int mx, int my)
         {
             if (buttons[i].page == currentPage && mx >= buttons[i].x && mx <= buttons[i].x + buttons[i].width && my >= buttons[i].y && my <= buttons[i].y + buttons[i].height)
             {
-                printf("Clicked button: %s\n", buttons[i].text);
-                iPlaySound("assets/sounds/menu_click.wav", 0, 30);
-                if (i == 0 && !isResumable) continue;
+                if (isSoundOn)
+                    iPlaySound("assets/sounds/menu_click.wav", 0, 30);
+                if (i == 0 && !isResumable)
+                    continue;
                 buttons[i].onClick();
+            }
+        }
+        for (int i = 0; i < 2; i++)
+        {
+            if (icons[i].page == currentPage && mx >= icons[i].x && mx <= icons[i].x + icons[i].width && my >= icons[i].y && my <= icons[i].y + icons[i].height)
+            {
+                icons[i].onClick();
             }
         }
     }
