@@ -452,8 +452,38 @@ struct Button buttons[50] = {
     {WIDTH / 2 - 180, 120, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 5", 40, 8, LEVELS_PAGE, []()
      { changeLevel(5); },
      false},
+
+    {180, 120, 380, 100, {0, 0, 0}, {200, 200, 200}, "MAIN MENU", 40, 6, GAME_OVER_PAGE, []()
+     {
+         currentPage = MENU_PAGE;
+         switchBackgroundMusic(0); // Menu music
+     },
+     false},
+    {WIDTH / 2 + 80, 120, 380, 100, {0, 0, 0}, {200, 200, 200}, "TRY AGAIN", 40, 16, GAME_OVER_PAGE, []()
+     {
+         currentPage = GAME_PAGE;
+         changeLevel(currentLevel);
+         switchBackgroundMusic(1); // Game music
+     },
+     false},
+
+    // WIN_PAGE
+    {80, 120, 320, 100, {0, 0, 0}, {200, 200, 200}, "MAIN MENU", 40, 6, WIN_PAGE, []()
+     {
+         currentPage = MENU_PAGE;
+         switchBackgroundMusic(0); // Menu music
+     },
+     false},
+    {WIDTH / 2 - 158, 120, 320, 100, {0, 0, 0}, {200, 200, 200}, "PLAY AGAIN", 40, 16, WIN_PAGE, []()
+     {
+         currentPage = GAME_PAGE;
+         changeLevel(currentLevel);
+         switchBackgroundMusic(1); // Game music
+     },
+     false},
+    {WIDTH / 2 + 240, 120, 320, 100, {0, 0, 0}, {200, 200, 200}, "", 40, 16, WIN_PAGE, []() {}, false}, // Placeholder for the third button
 }; // TODO: Add extra dimension for pages?
- 
+
 // * Background music management functions
 void playBackgroundMusic(int musicType)
 {
@@ -503,15 +533,15 @@ void switchBackgroundMusic(int newMusicType)
 }
 
 // * Game logic functions
-bool isTrap(int id) {
-    for (int i = 0; i < sizeof(trapIds) / sizeof(trapIds[0]); i++) {
-        if (id == trapIds[i]) {
+bool isTrap(int id)
+{
+    for (int i = 0; i < sizeof(trapIds) / sizeof(trapIds[0]); i++)
+    {
+        if (id == trapIds[i])
             return true;
-        }
     }
     return false;
 }
-
 
 // TODO: Invert velocity for bouncing?
 void moveVerticallyTillCollision(double delY)
@@ -941,8 +971,12 @@ void drawGameOverPage()
     iShowLoadedImage(0, 0, &background_image);
 
     iSetColor(0, 0, 0);
-    iShowText(WIDTH / 2 - 245, HEIGHT / 2 + 50, "Game Over", "assets/fonts/minecraft_ten.ttf", 100);
-    iShowText(WIDTH / 2 - 110, HEIGHT / 2 - 50, scoreText, "assets/fonts/minecraft_ten.ttf", 60);
+    iShowText(WIDTH / 2 - 245, HEIGHT / 2 + 100, "Game Over", "assets/fonts/minecraft_ten.ttf", 100);
+    iShowText(WIDTH / 2 - 126, HEIGHT / 2, scoreText, "assets/fonts/minecraft_ten.ttf", 60);
+
+    // Main Menu and Try Again buttons
+    drawButton(buttons[10]);
+    drawButton(buttons[11]);
 }
 
 void drawWinPage()
@@ -952,8 +986,33 @@ void drawWinPage()
     iShowLoadedImage(0, 0, &background_image);
 
     iSetColor(0, 0, 0);
-    iShowText(200, HEIGHT / 2 + 50, levelCompletionText, "assets/fonts/minecraft_ten.ttf", 100);
-    iShowText(WIDTH / 2 - 110, HEIGHT / 2 - 50, scoreText, "assets/fonts/minecraft_ten.ttf", 60);
+    iShowText(200, HEIGHT / 2 + 100, levelCompletionText, "assets/fonts/minecraft_ten.ttf", 100);
+    iShowText(WIDTH / 2 - 110, HEIGHT / 2, scoreText, "assets/fonts/minecraft_ten.ttf", 60);
+
+    // Main Menu and Play Again buttons
+    drawButton(buttons[12]);
+    drawButton(buttons[13]);
+    // Next Level or Exit button
+    if (currentLevel < LEVEL_COUNT)
+    {
+        buttons[14].text = "NEXT LEVEL";
+        buttons[14].onClick = []()
+        {
+            currentPage = GAME_PAGE;
+            changeLevel(currentLevel + 1);
+            switchBackgroundMusic(1); // Game music
+        };
+        drawButton(buttons[14]);
+    }
+    else
+    {
+        buttons[14].text = "EXIT";
+        buttons[14].onClick = []()
+        {
+            iCloseWindow();
+        };
+        drawButton(buttons[14]);
+    }
 }
 
 // * Keyboard functions
@@ -1037,7 +1096,7 @@ void iMouse(int button, int state, int mx, int my)
     // Button click handling
     if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN)
     {
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 17; i++) // TODO: Extract button count to a variable.
         {
             if (buttons[i].page == currentPage && mx >= buttons[i].x && mx <= buttons[i].x + buttons[i].width && my >= buttons[i].y && my <= buttons[i].y + buttons[i].height)
             {
