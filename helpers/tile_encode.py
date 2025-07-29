@@ -29,8 +29,8 @@ DOES_COLLIDE_FLAG = 0x10000000
 
 for level in range(1, 6):
     try:
-        level_metadata_file = open(f"levels/level{level}/n.txt")
-        level_count = int(level_metadata_file.read())
+        level_metadata_file = open(f"levels/level{level}/metadata.txt")
+        level_count = int(level_metadata_file.read().split("\n")[0])
         level_metadata_file.close()
 
         for layer in range(level_count):

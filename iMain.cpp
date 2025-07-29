@@ -261,7 +261,8 @@ void loadLevel(int level)
     }
 
     char level_metadata_filename[100];
-    sprintf(level_metadata_filename, "levels/level%d/n.txt", level);
+    char level_background_filename[100];
+    sprintf(level_metadata_filename, "levels/level%d/metadata.txt", level);
     FILE *level_metadata_file = fopen(level_metadata_filename, "r");
     if (level_metadata_file == NULL)
     {
@@ -269,8 +270,13 @@ void loadLevel(int level)
         printf("Level metadata file open failed\n");
         return;
     }
-    fscanf(level_metadata_file, "%d", &layerCount[level - 1]);
+    char level_color[50];
+    fscanf(level_metadata_file, "%d %s", &layerCount[level - 1], level_color);
+    sprintf(level_background_filename, "assets/backgrounds/background_%s.png", level_color);
     fclose(level_metadata_file);
+
+    iLoadImage(&background_image, level_background_filename);
+    iResizeImage(&background_image, WIDTH, HEIGHT);
 
     for (int layer = 0; layer < layerCount[level - 1]; layer++)
     {
@@ -347,10 +353,6 @@ void loadLevel(int level)
 
 void loadAssets()
 {
-    // Load images
-    iLoadImage(&background_image, "assets/backgrounds/background.png");
-    iResizeImage(&background_image, WIDTH, HEIGHT);
-
     // Load tiles
     for (int i = 0; i < 180; i++)
     {
