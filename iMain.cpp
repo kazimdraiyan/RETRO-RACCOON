@@ -4,7 +4,6 @@
 
 // * Bugs
 // TODO: Reckheck pausing mechanism.
-// TODO: Resume button cilckable even if it's not shown on the screen.
 // TODO: Player direction bug.
 
 // * Optimization
@@ -73,6 +72,8 @@ enum Page
     OPTIONS_PAGE,
     GAME_OVER_PAGE,
     WIN_PAGE,
+    HELP_PAGE,
+    CREDITS_PAGE,
 };
 
 struct Color
@@ -177,6 +178,8 @@ void drawMenuPage();
 void drawLevelsPage();
 void drawHighScoresPage();
 void drawOptionsPage();
+void drawHelpPage();
+void drawCreditsPage();
 void drawWinPage();
 void drawGameOverPage();
 
@@ -432,27 +435,39 @@ void changeLevel(int level)
 }
 
 struct Button buttons[50] = {
-    {WIDTH - 400, 420, 380, 80, {0, 0, 0}, {200, 200, 200}, "RESUME", 40, 2, MENU_PAGE, []()
+    {WIDTH - 400, 620, 380, 80, {0, 0, 0}, {200, 200, 200}, "RESUME", 40, 2, MENU_PAGE, []()
      {
          currentPage = GAME_PAGE;
          switchBackgroundMusic(1); // Game music
      },
      false},
-    {WIDTH - 400, 320, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVELS", 40, 10, MENU_PAGE, []()
+    {WIDTH - 400, 520, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVELS", 40, 10, MENU_PAGE, []()
      {
          currentPage = LEVELS_PAGE;
          switchBackgroundMusic(0); // Menu music
      },
      false},
-    {WIDTH - 400, 220, 380, 80, {0, 0, 0}, {200, 200, 200}, "HIGH SCORES", 40, 24, MENU_PAGE, []()
+    {WIDTH - 400, 420, 380, 80, {0, 0, 0}, {200, 200, 200}, "HIGH SCORES", 40, 24, MENU_PAGE, []()
      {
          currentPage = HIGH_SCORES_PAGE;
          switchBackgroundMusic(0); // Menu music
      },
      false},
-    {WIDTH - 400, 120, 380, 80, {0, 0, 0}, {200, 200, 200}, "OPTIONS", 40, 8, MENU_PAGE, []()
+    {WIDTH - 400, 320, 380, 80, {0, 0, 0}, {200, 200, 200}, "OPTIONS", 40, 8, MENU_PAGE, []()
      {
          currentPage = OPTIONS_PAGE;
+         switchBackgroundMusic(0); // Menu music
+     },
+     false},
+    {WIDTH - 400, 220, 380, 80, {0, 0, 0}, {200, 200, 200}, "HELP", 40, 8, MENU_PAGE, []()
+     {
+         currentPage = HELP_PAGE;
+         switchBackgroundMusic(0); // Menu music
+     },
+     false},
+    {WIDTH - 400, 120, 380, 80, {0, 0, 0}, {200, 200, 200}, "CREDITS", 40, 8, MENU_PAGE, []()
+     {
+         currentPage = CREDITS_PAGE;
          switchBackgroundMusic(0); // Menu music
      },
      false},
@@ -505,6 +520,15 @@ struct Button buttons[50] = {
      },
      false},
     {WIDTH / 2 + 240, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "", 40, 16, WIN_PAGE, []() {}, false}, // Placeholder for the third button
+
+    // HELP_PAGE
+    {WIDTH - 400, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "BACK", 40, 6, HELP_PAGE, []()
+     {
+         currentPage = MENU_PAGE;
+         switchBackgroundMusic(0); // Menu music
+     },
+     false},
+
 }; // TODO: Add extra dimension for pages?
 
 // * Background music management functions
@@ -855,6 +879,14 @@ void iDraw()
     {
         drawWinPage();
     }
+    else if (currentPage == HELP_PAGE)
+    {
+        drawHelpPage();
+    }
+    else if (currentPage == CREDITS_PAGE)
+    {
+        drawCreditsPage();
+    }
     // else if (currentPage == TEST_PAGE)
     // {
     //     drawTestPage();
@@ -1003,7 +1035,7 @@ void drawMenuPage()
     iShowText(40, 170, "RETRO", "assets/fonts/minecraft_ten.ttf", 167);
     iShowText(40, 40, "RACCOON", "assets/fonts/minecraft_ten.ttf", 120);
 
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 7; i++)
     {
         if (i == 0 && !isResumable)
         {
@@ -1018,7 +1050,7 @@ void drawLevelsPage()
     iClear();
     iShowLoadedImage(0, 0, &background_image);
 
-    for (int i = 5; i < 10; i++)
+    for (int i = 7; i < 12; i++)
     {
         drawButton(buttons[i]);
     }
@@ -1034,6 +1066,69 @@ void drawOptionsPage()
     // TODO: Implement options page.
 }
 
+void drawHelpPage()
+{
+    iClear();
+    iShowLoadedImage(0, 0, &background_image);
+
+    iSetColor(0, 0, 0);
+    iShowText(WIDTH / 2 - 100, HEIGHT - 100, "Help", "assets/fonts/minecraft_ten.ttf", 80);
+
+    // Section 1: Controls
+    iShowText(80, HEIGHT - 200, "Controls", "assets/fonts/minecraft_ten.ttf", 60);
+    iShowText(80, HEIGHT - 250, "Left and Right Arrow - Move", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(80, HEIGHT - 300, "Up Arrow - Jump", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(80, HEIGHT - 350, "Esc - Pause", "assets/fonts/minecraft_ten.ttf", 30);
+
+    // Section 2: Objectives
+    iShowText(80, HEIGHT - 450, "Objective", "assets/fonts/minecraft_ten.ttf", 60);
+    iShowText(80, HEIGHT - 500, "Reach the flag on the right", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(80, HEIGHT - 550, "Avoid traps", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(80, HEIGHT - 600, "Collect coins and diamonds", "assets/fonts/minecraft_ten.ttf", 30);
+
+    // Section 3: Scoring
+    iShowText(600, HEIGHT - 200, "Scoring", "assets/fonts/minecraft_ten.ttf", 60);
+    iShowText(600, HEIGHT - 250, "Coin - 10 points", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(600, HEIGHT - 300, "Diamond - 50 points", "assets/fonts/minecraft_ten.ttf", 30);
+
+    // Section 4: Stars
+    iShowText(600, HEIGHT - 400, "Stars", "assets/fonts/minecraft_ten.ttf", 60);
+    iShowText(600, HEIGHT - 450, "3 Stars - 3 lives + all coins & diamonds", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(600, HEIGHT - 500, "2 Stars - 3 lives or all coins & diamonds", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(600, HEIGHT - 550, "1 Star - Finished, but missed both", "assets/fonts/minecraft_ten.ttf", 30);
+
+    // Back button
+    buttons[17].page = HELP_PAGE;
+    drawButton(buttons[17]);
+}
+
+void drawCreditsPage()
+{
+    iClear();
+    iShowLoadedImage(0, 0, &background_image);
+
+    iSetColor(0, 0, 0);
+    iShowText(WIDTH / 2 - 130, HEIGHT - 100, "Credits", "assets/fonts/minecraft_ten.ttf", 80);
+
+    // Section 1: Contributors
+    iShowText(80, HEIGHT - 200, "Contributors", "assets/fonts/minecraft_ten.ttf", 60);
+    iShowText(80, HEIGHT - 250, "2405102 - Arif Awasaf Wriddho", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(80, HEIGHT - 300, "2405103 - Kazi Md. Raiyan", "assets/fonts/minecraft_ten.ttf", 30);
+
+    // Section 2: Tools
+    iShowText(80, HEIGHT - 400, "Tools", "assets/fonts/minecraft_ten.ttf", 60);
+    iShowText(80, HEIGHT - 450, "Modern iGraphics v0.4.0 by Mahir Labib Dihan", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(80, HEIGHT - 500, "Tiled - for level design", "assets/fonts/minecraft_ten.ttf", 30);
+
+    // Section 3: Assets
+    iShowText(80, HEIGHT - 600, "Assets", "assets/fonts/minecraft_ten.ttf", 60);
+    iShowText(80, HEIGHT - 650, "Pixel Platformer by Kenney", "assets/fonts/minecraft_ten.ttf", 30);
+
+    // Back button
+    buttons[17].page = CREDITS_PAGE;
+    drawButton(buttons[17]);
+}
+
 void drawGameOverPage()
 {
     iClear();
@@ -1045,8 +1140,8 @@ void drawGameOverPage()
     iShowText(WIDTH / 2 - 126, HEIGHT / 2, scoreText, "assets/fonts/minecraft_ten.ttf", 60);
 
     // Main Menu and Try Again buttons
-    drawButton(buttons[10]);
-    drawButton(buttons[11]);
+    drawButton(buttons[12]);
+    drawButton(buttons[13]);
 }
 
 void drawWinPage()
@@ -1065,28 +1160,28 @@ void drawWinPage()
     iShowLoadedImage(WIDTH / 2 + 120, HEIGHT / 2 + 50, starCount > 2 ? &yellowStarImage : &whiteStarImage);
 
     // Main Menu and Play Again buttons
-    drawButton(buttons[12]);
-    drawButton(buttons[13]);
+    drawButton(buttons[14]);
+    drawButton(buttons[15]);
     // Next Level or Exit button
     if (currentLevel < LEVEL_COUNT)
     {
-        buttons[14].text = "NEXT LEVEL";
-        buttons[14].onClick = []()
+        buttons[16].text = "NEXT LEVEL";
+        buttons[16].onClick = []()
         {
             currentPage = GAME_PAGE;
             changeLevel(currentLevel + 1);
             switchBackgroundMusic(1); // Game music
         };
-        drawButton(buttons[14]);
+        drawButton(buttons[16]);
     }
     else
     {
-        buttons[14].text = "EXIT";
-        buttons[14].onClick = []()
+        buttons[16].text = "EXIT";
+        buttons[16].onClick = []()
         {
             iCloseWindow();
         };
-        drawButton(buttons[14]);
+        drawButton(buttons[16]);
     }
 }
 
@@ -1171,12 +1266,13 @@ void iMouse(int button, int state, int mx, int my)
     // Button click handling
     if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN)
     {
-        for (int i = 0; i < 17; i++) // TODO: Extract button count to a variable.
+        for (int i = 0; i < 18; i++) // TODO: Extract button count to a variable.
         {
             if (buttons[i].page == currentPage && mx >= buttons[i].x && mx <= buttons[i].x + buttons[i].width && my >= buttons[i].y && my <= buttons[i].y + buttons[i].height)
             {
                 printf("Clicked button: %s\n", buttons[i].text);
                 iPlaySound("assets/sounds/menu_click.wav", 0, 30);
+                if (i == 0 && !isResumable) continue;
                 buttons[i].onClick();
             }
         }
