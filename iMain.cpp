@@ -51,8 +51,8 @@
 #define COIN_SCORE 10
 #define DIAMOND_SCORE 50
 
-#define PLAYER_INITIAL_X 200
-#define PLAYER_INITIAL_Y 300
+#define PLAYER_INITIAL_X 200 // 1200
+#define PLAYER_INITIAL_Y 300 // 500
 #define X_ANIMATION_DEL_X 5
 
 // TODO: Learn more about enum.
@@ -120,6 +120,8 @@ int mouseY = 0;
 
 // * Asset management variables
 Image background_image;
+Image yellowStarImage;
+Image whiteStarImage;
 Image lifeImages[2];
 Image tileImages[180]; // TODO: Load only the tiles that are needed.
 Image coinFrames[2];
@@ -154,6 +156,7 @@ int animateToX = player.x;
 double velocityY = 0;
 int score = 0;
 int lifeCount = 3;
+int starCount = 0;
 // TODO: Include these in the player struct.
 // TODO: Handle the jump in a better way?
 bool isJumping = false; // isJumping tells whether the player just jumped or not.
@@ -327,6 +330,10 @@ void loadAssets()
         iResizeImage(&tileImages[i], TILE_SIZE, TILE_SIZE);
     }
 
+    // Load star image
+    iLoadImage(&yellowStarImage, "assets/icons/star_yellow.png");
+    iLoadImage(&whiteStarImage, "assets/icons/star_white.png");
+
     // Load life images
     iLoadImage(&lifeImages[0], "assets/special_tiles/no_life.png");
     iLoadImage(&lifeImages[1], "assets/special_tiles/full_life.png");
@@ -396,6 +403,22 @@ void resetGame()
     initializeGridArrays(diamondArray, 0);
     initializeGridArrays(lifeArray, 0);
     initializeGridArrays(trapArray, 0);
+}
+
+int collectableCount(int collectableArray[ROWS][COLUMNS])
+{
+    int count = 0;
+    for (int i = 0; i < ROWS; i++)
+    {
+        for (int j = 0; j < COLUMNS; j++)
+        {
+            if (collectableArray[i][j])
+            {
+                count++;
+            }
+        }
+    }
+    return count;
 }
 
 void changeLevel(int level)
@@ -468,20 +491,20 @@ struct Button buttons[50] = {
      false},
 
     // WIN_PAGE
-    {80, 120, 320, 100, {0, 0, 0}, {200, 200, 200}, "MAIN MENU", 40, 6, WIN_PAGE, []()
+    {80, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "MAIN MENU", 40, 6, WIN_PAGE, []()
      {
          currentPage = MENU_PAGE;
          switchBackgroundMusic(0); // Menu music
      },
      false},
-    {WIDTH / 2 - 158, 120, 320, 100, {0, 0, 0}, {200, 200, 200}, "PLAY AGAIN", 40, 16, WIN_PAGE, []()
+    {WIDTH / 2 - 158, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "PLAY AGAIN", 40, 16, WIN_PAGE, []()
      {
          currentPage = GAME_PAGE;
          changeLevel(currentLevel);
          switchBackgroundMusic(1); // Game music
      },
      false},
-    {WIDTH / 2 + 240, 120, 320, 100, {0, 0, 0}, {200, 200, 200}, "", 40, 16, WIN_PAGE, []() {}, false}, // Placeholder for the third button
+    {WIDTH / 2 + 240, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "", 40, 16, WIN_PAGE, []() {}, false}, // Placeholder for the third button
 }; // TODO: Add extra dimension for pages?
 
 // * Background music management functions
@@ -591,7 +614,54 @@ void gameStateUpdate()
 
     if (player.x + player.width > WIDTH)
     {
-        sprintf(levelCompletionText, "Level %d Completed", currentLevel);
+        if (lifeCount == 3 && collectedCoinCount == collectableCount(coinArray) && collectedDiamondCount == collectableCount(diamondArray))
+        {
+            // If the player has 3 lives, and collected all coins and diamonds.
+            starCount = 3;
+        }
+        else if (lifeCount == 3 || (collectedCoinCount == collectableCount(coinArray) && collectedDiamondCount == collectableCount(diamondArray)))
+        {
+            // If the player has 3 lives, xor collected all coins and diamonds.
+            starCount = 2;
+        }
+        else
+        {
+            // If the player has less than 3 lives, and not collected all coins and diamonds.
+            starCount = 1;
+        }
+
+        char highScoreFilePath[100];
+        sprintf(highScoreFilePath, "levels/level%d/high_score.txt", currentLevel);
+        FILE *highScoreFile = fopen(highScoreFilePath, "r");
+        if (highScoreFile == NULL)
+        {
+            highScoreFile = fopen(highScoreFilePath, "w");
+            fprintf(highScoreFile, "%d %d", starCount, score);
+            fclose(highScoreFile);
+        }
+        else
+        {
+            int highScoreStars, highScoreScore;
+            fscanf(highScoreFile, "%d %d", &highScoreStars, &highScoreScore);
+            printf("High Score: %d %d\n", highScoreStars, highScoreScore);
+            if (starCount > highScoreStars)
+            {
+                fclose(highScoreFile);
+                highScoreFile = fopen(highScoreFilePath, "w");
+                fprintf(highScoreFile, "%d %d", starCount, score);
+            }
+            else if (starCount == highScoreStars && score > highScoreScore)
+            {
+                fclose(highScoreFile);
+                highScoreFile = fopen(highScoreFilePath, "w");
+                fprintf(highScoreFile, "%d %d", highScoreStars, score);
+            }
+            fclose(highScoreFile);
+        }
+
+        printf("Stars: %d\n", starCount);
+
+        sprintf(levelCompletionText, "Level %d", currentLevel);
         resetGame();
 
         stopBackgroundMusic();
@@ -986,8 +1056,13 @@ void drawWinPage()
     iShowLoadedImage(0, 0, &background_image);
 
     iSetColor(0, 0, 0);
-    iShowText(200, HEIGHT / 2 + 100, levelCompletionText, "assets/fonts/minecraft_ten.ttf", 100);
-    iShowText(WIDTH / 2 - 110, HEIGHT / 2, scoreText, "assets/fonts/minecraft_ten.ttf", 60);
+    iShowText(WIDTH / 2 - 140, HEIGHT - 120, levelCompletionText, "assets/fonts/minecraft_ten.ttf", 80);
+    iShowText(WIDTH / 2 - 130, HEIGHT / 2 - 70, scoreText, "assets/fonts/minecraft_ten.ttf", 60);
+
+    // 3 stars
+    iShowLoadedImage(WIDTH / 2 - 240, HEIGHT / 2 + 50, &yellowStarImage);
+    iShowLoadedImage(WIDTH / 2 - 60, HEIGHT / 2 + 50, starCount > 1 ? &yellowStarImage : &whiteStarImage);
+    iShowLoadedImage(WIDTH / 2 + 120, HEIGHT / 2 + 50, starCount > 2 ? &yellowStarImage : &whiteStarImage);
 
     // Main Menu and Play Again buttons
     drawButton(buttons[12]);
