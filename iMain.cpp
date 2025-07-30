@@ -65,6 +65,7 @@ enum Direction
 
 enum Page
 {
+    NAME_INPUT_PAGE,
     MENU_PAGE,
     GAME_PAGE,
     LEVELS_PAGE,
@@ -133,12 +134,13 @@ struct Player
 };
 
 // * Game UI management variables
-int currentPage = MENU_PAGE;
+Page currentPage;
 int currentLevel = 1;
 int isResumable = 0;
 int isFirstDraw = 1;
 char levelCompletionText[50]; // TODO: Find a better way to handle this.
 char scoreText[50];
+char playerNameInput[50];
 int mouseX = 0;
 int mouseY = 0;
 
@@ -176,6 +178,7 @@ bool isMusicOn = true;
 bool isSoundOn = true;
 
 // * Game state variables
+char playerName[51] = "";
 int gameStateUpdateTimer;
 int horizontalMovementTimer;
 int spriteAnimationTimer; // TODO: Create separate timer for each sprite animation?
@@ -201,6 +204,7 @@ int collectedDiamondCount = 0;
 int collectedLifeCount = 0;
 
 // * These functions acts as UI Widgets.
+void drawNameInputPage();
 void drawMenuPage();
 void drawLevelsPage();
 void drawHighScoresPage();
@@ -275,6 +279,7 @@ void loadLevel(int level)
     sprintf(level_background_filename, "assets/backgrounds/background_%s.png", level_color);
     fclose(level_metadata_file);
 
+    // TODO: Optimize this by not loading the background if it was loaded once.
     iLoadImage(&background_image, level_background_filename);
     iResizeImage(&background_image, WIDTH, HEIGHT);
 
@@ -555,6 +560,14 @@ struct Button buttons[50] = {
          currentPage = MENU_PAGE;
      },
      false},
+
+    // OPTIONS_PAGE
+    {40, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "Edit Name", 40, 6, 0, OPTIONS_PAGE, []()
+     {
+         strcpy(playerNameInput, playerName);
+         currentPage = NAME_INPUT_PAGE;
+     },
+     false},
 }; // TODO: Add extra dimension for pages?
 
 struct Icon icons[2] = {
@@ -678,6 +691,38 @@ void moveVerticallyTillCollision(double delY)
     }
 }
 
+void saveScore()
+{
+    // char highScoreFilePath[100];
+    // sprintf(highScoreFilePath, "saves/high_score.txt");
+    // FILE *highScoreFile = fopen(highScoreFilePath, "r");
+    // if (highScoreFile == NULL)
+    // {
+    //     highScoreFile = fopen(highScoreFilePath, "w");
+    //     fprintf(highScoreFile, "%d %d", starCount, score);
+    //     fclose(highScoreFile);
+    // }
+    // else
+    // {
+    //     int highScoreStars, highScoreScore;
+    //     fscanf(highScoreFile, "%d %d", &highScoreStars, &highScoreScore);
+    //     printf("High Score: %d %d\n", highScoreStars, highScoreScore);
+    //     if (starCount > highScoreStars)
+    //     {
+    //         fclose(highScoreFile);
+    //         highScoreFile = fopen(highScoreFilePath, "w");
+    //         fprintf(highScoreFile, "%d %d", starCount, score);
+    //     }
+    //     else if (starCount == highScoreStars && score > highScoreScore)
+    //     {
+    //         fclose(highScoreFile);
+    //         highScoreFile = fopen(highScoreFilePath, "w");
+    //         fprintf(highScoreFile, "%d %d", highScoreStars, score);
+    //     }
+    //     fclose(highScoreFile);
+    // }
+}
+
 void gameStateUpdate()
 {
     // ? Store these as macros?
@@ -691,51 +736,13 @@ void gameStateUpdate()
     if (player.x + player.width > WIDTH)
     {
         if (lifeCount == 3 && collectedCoinCount == collectableCount(coinArray) && collectedDiamondCount == collectableCount(diamondArray))
-        {
-            // If the player has 3 lives, and collected all coins and diamonds.
             starCount = 3;
-        }
         else if (lifeCount == 3 || (collectedCoinCount == collectableCount(coinArray) && collectedDiamondCount == collectableCount(diamondArray)))
-        {
-            // If the player has 3 lives, xor collected all coins and diamonds.
             starCount = 2;
-        }
         else
-        {
-            // If the player has less than 3 lives, and not collected all coins and diamonds.
             starCount = 1;
-        }
 
-        char highScoreFilePath[100];
-        sprintf(highScoreFilePath, "levels/level%d/high_score.txt", currentLevel);
-        FILE *highScoreFile = fopen(highScoreFilePath, "r");
-        if (highScoreFile == NULL)
-        {
-            highScoreFile = fopen(highScoreFilePath, "w");
-            fprintf(highScoreFile, "%d %d", starCount, score);
-            fclose(highScoreFile);
-        }
-        else
-        {
-            int highScoreStars, highScoreScore;
-            fscanf(highScoreFile, "%d %d", &highScoreStars, &highScoreScore);
-            printf("High Score: %d %d\n", highScoreStars, highScoreScore);
-            if (starCount > highScoreStars)
-            {
-                fclose(highScoreFile);
-                highScoreFile = fopen(highScoreFilePath, "w");
-                fprintf(highScoreFile, "%d %d", starCount, score);
-            }
-            else if (starCount == highScoreStars && score > highScoreScore)
-            {
-                fclose(highScoreFile);
-                highScoreFile = fopen(highScoreFilePath, "w");
-                fprintf(highScoreFile, "%d %d", highScoreStars, score);
-            }
-            fclose(highScoreFile);
-        }
-
-        printf("Stars: %d\n", starCount);
+        saveScore();
 
         sprintf(levelCompletionText, "Level %d", currentLevel);
         resetGame();
@@ -941,6 +948,10 @@ void iDraw()
     {
         drawCreditsPage();
     }
+    else if (currentPage == NAME_INPUT_PAGE)
+    {
+        drawNameInputPage();
+    }
     // else if (currentPage == TEST_PAGE)
     // {
     //     drawTestPage();
@@ -1104,6 +1115,25 @@ void drawIcon(Icon &icon)
     iShowLoadedImage(icon.x + icon.xOffset, icon.y + icon.yOffset, icon.image);
 }
 
+void drawNameInputPage()
+{
+    iClear();
+    iShowLoadedImage(0, 0, &background_image);
+
+    iSetColor(0, 0, 0);
+    iShowText(WIDTH / 2 - 320, HEIGHT / 2 + 100, "Enter your name", "assets/fonts/minecraft_ten.ttf", 80);
+    iShowText(WIDTH / 2 - 315, HEIGHT / 2, playerNameInput, "assets/fonts/minecraft_ten.ttf", 36);
+    iFilledRectangle(WIDTH / 2 - 315, HEIGHT / 2 - 26, 660, 4);
+    iShowText(WIDTH / 2 - 180, 48, "Press Enter to continue", "assets/fonts/minecraft_ten.ttf", 30);
+
+    if (strlen(playerName) > 0)
+    {
+        // Back button
+        buttons[17].page = NAME_INPUT_PAGE;
+        drawButton(buttons[17]);
+    }
+}
+
 // * UI Widget: Page function definitions
 void drawMenuPage()
 {
@@ -1111,6 +1141,11 @@ void drawMenuPage()
     iShowLoadedImage(0, 0, &background_image);
 
     iSetColor(0, 0, 0);
+
+    char playerNameText[80];
+    sprintf(playerNameText, "Player: %s", playerName);
+    iShowText(40, HEIGHT - 60, playerNameText, "assets/fonts/minecraft_ten.ttf", 36);
+
     iShowText(40, 170, "RETRO", "assets/fonts/minecraft_ten.ttf", 167);
     iShowText(40, 40, "RACCOON", "assets/fonts/minecraft_ten.ttf", 120);
 
@@ -1162,10 +1197,12 @@ void drawOptionsPage()
     iShowText(WIDTH / 2 - 20, HEIGHT / 2 + 8, "Music", "assets/fonts/minecraft_ten.ttf", 60);
 
     // Sound off/on
-    // drawIcon(WIDTH / 2 - 100, HEIGHT / 2 - 100, isSoundOn ? &audioOnImage : &audioOffImage, false, 0, -3);
     icons[1].image = isSoundOn ? &audioOnImage : &audioOffImage;
     drawIcon(icons[1]);
     iShowText(WIDTH / 2 - 20, HEIGHT / 2 - 92, "Sound", "assets/fonts/minecraft_ten.ttf", 60);
+
+    // Edit Player Name button
+    drawButton(buttons[18]);
 
     // Back button
     buttons[17].page = OPTIONS_PAGE;
@@ -1291,6 +1328,18 @@ void drawWinPage()
     }
 }
 
+bool isStringWhitespace(char *str)
+{
+    for (int i = 0; i < strlen(str); i++)
+    {
+        if (!isspace(str[i]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 // * Keyboard functions
 void iKeyboard(unsigned char key, int state)
 {
@@ -1298,12 +1347,38 @@ void iKeyboard(unsigned char key, int state)
     switch (key)
     {
     case 27: // Escape key
+        if (currentPage == NAME_INPUT_PAGE && strlen(playerName) == 0)
+            return;
         currentPage = MENU_PAGE;
         iPauseTimer(gameStateUpdateTimer);
         switchBackgroundMusic(MENU_MUSIC);
         break;
     default:
         break;
+    }
+
+    if (currentPage == NAME_INPUT_PAGE && state == GLUT_DOWN)
+    {
+        int len = strlen(playerNameInput);
+        if (key == '\b' && len > 0)
+        {
+            // Backspace key pressed.
+            playerNameInput[len - 1] = '\0';
+        }
+        else if (key == '\r' && len > 0 && !isStringWhitespace(playerNameInput))
+        {
+            // Enter key pressed.
+            currentPage = MENU_PAGE;
+            strcpy(playerName, playerNameInput);
+            FILE *playerNameFile = fopen("saves/current_player.txt", "w");
+            fprintf(playerNameFile, "%s", playerNameInput);
+            fclose(playerNameFile);
+        }
+        else if (key >= 32 && key <= 126 && len < 50)
+        {
+            playerNameInput[len] = key;
+            playerNameInput[len + 1] = '\0';
+        }
     }
 }
 
@@ -1373,13 +1448,15 @@ void iMouse(int button, int state, int mx, int my)
     // Button click handling
     if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN)
     {
-        for (int i = 0; i < 18; i++) // TODO: Extract button count to a variable.
+        for (int i = 0; i < 19; i++) // TODO: Extract button count to a variable.
         {
             if (buttons[i].page == currentPage && mx >= buttons[i].x && mx <= buttons[i].x + buttons[i].width && my >= buttons[i].y && my <= buttons[i].y + buttons[i].height)
             {
                 if (isSoundOn)
                     iPlaySound("assets/sounds/menu_click.wav", 0, 30);
                 if (i == 0 && !isResumable)
+                    continue;
+                if (i == 18 && strlen(playerName) == 0) // No back button for the name input page when there is no player name.
                     continue;
                 buttons[i].onClick();
             }
@@ -1420,6 +1497,18 @@ void iMouseDrag(int mx, int my)
 
 int main(int argc, char *argv[])
 {
+    FILE *playerNameFile = fopen("saves/current_player.txt", "r");
+    if (playerNameFile != NULL)
+    {
+        fscanf(playerNameFile, "%s", playerName);
+        fclose(playerNameFile);
+    }
+
+    if (strlen(playerName) == 0)
+        currentPage = NAME_INPUT_PAGE;
+    else
+        currentPage = MENU_PAGE;
+
     glutInit(&argc, argv); // argc and argv are used for command line arguments.
 
     gameStateUpdateTimer = iSetTimer(10, gameStateUpdate);
