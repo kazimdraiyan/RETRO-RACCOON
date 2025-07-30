@@ -328,6 +328,13 @@ void saveHighScoresFile()
     fclose(highScoresFile);
 }
 
+void saveOptionsFile()
+{
+    FILE *optionsFile = fopen("saves/options.txt", "w");
+    fprintf(optionsFile, "%d %d", isMusicOn, isSoundOn);
+    fclose(optionsFile);
+}
+
 void loadLevel(int level)
 {
     // ? Should I initialize the arrays here?
@@ -663,12 +670,14 @@ struct Icon icons[2] = {
          {
              stopBackgroundMusic();
          }
+         saveOptionsFile();
      },
      false},
     // Sound on/off
     {WIDTH / 2 - 100, HEIGHT / 2 - 100, 60, 60, {0, 0, 0}, NULL, 0, -3, OPTIONS_PAGE, []()
      {
          isSoundOn = !isSoundOn;
+         saveOptionsFile();
      },
      false},
 };
@@ -1591,6 +1600,14 @@ int main(int argc, char *argv[])
         currentPage = NAME_INPUT_PAGE;
     else
         currentPage = MENU_PAGE;
+    
+    // Load the options.
+    FILE *optionsFile = fopen("saves/options.txt", "r");
+    if (optionsFile != NULL)
+    {
+        fscanf(optionsFile, "%d %d", &isMusicOn, &isSoundOn);
+        fclose(optionsFile);
+    }
 
     glutInit(&argc, argv); // argc and argv are used for command line arguments.
 
