@@ -178,6 +178,9 @@ bool isMusicOn = true;
 bool isSoundOn = true;
 
 // * Game state variables
+int playerCount = 0;
+char playerNames[50][100] = {};
+int highScores[50][LEVEL_COUNT][2] = {}; // Max 50 players, LEVEL_COUNT levels, 2 scores (stars and score)
 char playerName[51] = "";
 int gameStateUpdateTimer;
 int horizontalMovementTimer;
@@ -225,7 +228,36 @@ void playBackgroundMusic(MusicType musicType);
 void stopBackgroundMusic();
 void switchBackgroundMusic(MusicType newMusicType);
 
-bool isTrap(int id);
+// * Helper functions
+void toLowerString(char *str)
+{
+    for (int i = 0; str[i] != '\0'; i++)
+    {
+        str[i] = tolower(str[i]);
+    }
+}
+
+bool isStringWhitespace(char *str)
+{
+    for (int i = 0; i < strlen(str); i++)
+    {
+        if (!isspace(str[i]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool isTrap(int id)
+{
+    for (int i = 0; i < sizeof(trapIds) / sizeof(trapIds[0]); i++)
+    {
+        if (id == trapIds[i])
+            return true;
+    }
+    return false;
+}
 
 // * Initialization functions
 void initializeGridArrays(int array[ROWS][COLUMNS], int value)
@@ -239,13 +271,65 @@ void initializeGridArrays(int array[ROWS][COLUMNS], int value)
     }
 }
 
+void initializeHighScores()
+{
+    for (int i = 0; i < 50; i++)
+    {
+        for (int j = 0; j < 5; j++)
+        {
+            highScores[i][j][0] = 0;
+            highScores[i][j][1] = 0;
+        }
+    }
+}
+
+void parseHighScoresFile()
+{
+    FILE *highScoresFile = fopen("saves/high_scores.txt", "r");
+    if (highScoresFile == NULL)
+    {
+        printf("Error opening file\n");
+        return;
+    }
+    else
+    {
+        fscanf(highScoresFile, "%d", &playerCount);
+        for (int i = 0; i < playerCount; i++)
+        {
+            fscanf(highScoresFile, "%s", playerNames[i]);
+            toLowerString(playerNames[i]);
+            for (int j = 0; j < 5; j++)
+            {
+                fscanf(highScoresFile, "%d,%d", &highScores[i][j][0], &highScores[i][j][1]);
+            }
+        }
+    }
+    fclose(highScoresFile);
+}
+
+void saveHighScoresFile()
+{
+    FILE *highScoresFile = fopen("saves/high_scores.txt", "w");
+    if (highScoresFile == NULL)
+    {
+        printf("Error creating file\n");
+        return;
+    }
+    fprintf(highScoresFile, "%d\n", playerCount);
+    for (int i = 0; i < playerCount; i++)
+    {
+        toLowerString(playerNames[i]);
+        fprintf(highScoresFile, "%s\n", playerNames[i]);
+        for (int j = 0; j < 5; j++)
+        {
+            fprintf(highScoresFile, "%d,%d\n", highScores[i][j][0], highScores[i][j][1]);
+        }
+    }
+    fclose(highScoresFile);
+}
+
 void loadLevel(int level)
 {
-    // if (loadedLevels[level - 1] == 1)
-    // {
-    //     return;
-    // }
-
     // ? Should I initialize the arrays here?
     initializeGridArrays(doesCollideArray, 0);
     initializeGridArrays(coinArray, 0);
@@ -270,7 +354,6 @@ void loadLevel(int level)
     FILE *level_metadata_file = fopen(level_metadata_filename, "r");
     if (level_metadata_file == NULL)
     {
-        // TODO: Bug: Why is this called twice?
         printf("Level metadata file open failed\n");
         return;
     }
@@ -350,9 +433,6 @@ void loadLevel(int level)
         }
         fclose(layer_file);
     }
-
-    // Mark the level as loaded.
-    printf("Level %d loaded\n", level);
     loadedLevels[level - 1] = 1;
 }
 
@@ -645,17 +725,6 @@ void switchBackgroundMusic(MusicType newMusicType)
 }
 
 // * Game logic functions
-bool isTrap(int id)
-{
-    for (int i = 0; i < sizeof(trapIds) / sizeof(trapIds[0]); i++)
-    {
-        if (id == trapIds[i])
-            return true;
-    }
-    return false;
-}
-
-// TODO: Invert velocity for bouncing?
 void moveVerticallyTillCollision(double delY)
 {
     if (player.y + delY < 0) // Collision with the bottom of the screen.
@@ -691,36 +760,26 @@ void moveVerticallyTillCollision(double delY)
     }
 }
 
-void saveScore()
+void checkAndUpdateHighScores()
 {
-    // char highScoreFilePath[100];
-    // sprintf(highScoreFilePath, "saves/high_score.txt");
-    // FILE *highScoreFile = fopen(highScoreFilePath, "r");
-    // if (highScoreFile == NULL)
-    // {
-    //     highScoreFile = fopen(highScoreFilePath, "w");
-    //     fprintf(highScoreFile, "%d %d", starCount, score);
-    //     fclose(highScoreFile);
-    // }
-    // else
-    // {
-    //     int highScoreStars, highScoreScore;
-    //     fscanf(highScoreFile, "%d %d", &highScoreStars, &highScoreScore);
-    //     printf("High Score: %d %d\n", highScoreStars, highScoreScore);
-    //     if (starCount > highScoreStars)
-    //     {
-    //         fclose(highScoreFile);
-    //         highScoreFile = fopen(highScoreFilePath, "w");
-    //         fprintf(highScoreFile, "%d %d", starCount, score);
-    //     }
-    //     else if (starCount == highScoreStars && score > highScoreScore)
-    //     {
-    //         fclose(highScoreFile);
-    //         highScoreFile = fopen(highScoreFilePath, "w");
-    //         fprintf(highScoreFile, "%d %d", highScoreStars, score);
-    //     }
-    //     fclose(highScoreFile);
-    // }
+    for (int i = 0; i < playerCount; i++)
+    {
+        if (strcmp(playerNames[i], playerName) == 0)
+        {
+            if (starCount > highScores[i][currentLevel - 1][0])
+            {
+                highScores[i][currentLevel - 1][0] = starCount;
+                highScores[i][currentLevel - 1][1] = score;
+                saveHighScoresFile();
+            }
+            else if (starCount == highScores[i][currentLevel - 1][0] && score > highScores[i][currentLevel - 1][1])
+            {
+                highScores[i][currentLevel - 1][1] = score;
+                saveHighScoresFile();
+            }
+            break;
+        }
+    }
 }
 
 void gameStateUpdate()
@@ -742,7 +801,7 @@ void gameStateUpdate()
         else
             starCount = 1;
 
-        saveScore();
+        checkAndUpdateHighScores();
 
         sprintf(levelCompletionText, "Level %d", currentLevel);
         resetGame();
@@ -902,9 +961,9 @@ void iDraw()
         iShowSprite(&playerIdleSprite);
     }
 
-    // TODO: Optimize by redrawing the widgets only when they're changed.
     updateAllCollectables();
     checkCollisionWithTraps();
+
     drawScore();
     drawLifeCount();
 
@@ -951,14 +1010,6 @@ void iDraw()
     else if (currentPage == NAME_INPUT_PAGE)
     {
         drawNameInputPage();
-    }
-    // else if (currentPage == TEST_PAGE)
-    // {
-    //     drawTestPage();
-    // }
-    else
-    {
-        // TODO: Edge case handling.
     }
 
     isFirstDraw = false;
@@ -1179,7 +1230,40 @@ void drawLevelsPage()
 
 void drawHighScoresPage()
 {
-    // TODO: Implement high scores page.
+    iClear();
+    iShowLoadedImage(0, 0, &background_image);
+
+    iSetColor(0, 0, 0);
+    iShowText(WIDTH / 2 - 210, HEIGHT - 100, "High Scores", "assets/fonts/minecraft_ten.ttf", 80);
+
+    for (int i = 0; i < 5; i++)
+    {
+        char levelText[80];
+        sprintf(levelText, "Level %d", i + 1);
+        iShowText(500 + i * 150, HEIGHT - 200, levelText, "assets/fonts/minecraft_ten.ttf", 30);
+    }
+
+    for (int i = 0; i < playerCount; i++)
+    {
+        iShowText(60, HEIGHT - 250 - i * 50, playerNames[i], "assets/fonts/minecraft_ten.ttf", 30);
+        for (int j = 0; j < 5; j++)
+        {
+            char scoreText[80];
+            if (highScores[i][j][0] == 0)
+            {
+                sprintf(scoreText, "N/A");
+            }
+            else
+            {
+                sprintf(scoreText, "%d, %d", highScores[i][j][0], highScores[i][j][1]);
+            }
+            iShowText(500 + j * 150, HEIGHT - 250 - i * 50, scoreText, "assets/fonts/minecraft_ten.ttf", 28);
+        }
+    }
+
+    // Back button
+    buttons[17].page = HIGH_SCORES_PAGE;
+    drawButton(buttons[17]);
 }
 
 void drawOptionsPage()
@@ -1328,18 +1412,6 @@ void drawWinPage()
     }
 }
 
-bool isStringWhitespace(char *str)
-{
-    for (int i = 0; i < strlen(str); i++)
-    {
-        if (!isspace(str[i]))
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
 // * Keyboard functions
 void iKeyboard(unsigned char key, int state)
 {
@@ -1369,7 +1441,23 @@ void iKeyboard(unsigned char key, int state)
         {
             // Enter key pressed.
             currentPage = MENU_PAGE;
+            toLowerString(playerNameInput);
             strcpy(playerName, playerNameInput);
+            bool isNewPlayer = true;
+            for (int i = 0; i < playerCount; i++)
+            {
+                if (strcmp(playerNames[i], playerName) == 0)
+                {
+                    isNewPlayer = false;
+                    break;
+                }
+            }
+            if (isNewPlayer)
+            {
+                playerCount++;
+                strcpy(playerNames[playerCount - 1], playerName);
+                saveHighScoresFile();
+            }
             FILE *playerNameFile = fopen("saves/current_player.txt", "w");
             fprintf(playerNameFile, "%s", playerNameInput);
             fclose(playerNameFile);
@@ -1469,11 +1557,6 @@ void iMouse(int button, int state, int mx, int my)
             }
         }
     }
-    // // For debugging purposes.
-    // if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN)
-    // {
-    //     gravity *= -1;
-    // }
 }
 
 void iMouseMove(int mx, int my)
@@ -1490,20 +1573,20 @@ void iMouseWheel(int dir, int mx, int my)
 
 void iMouseDrag(int mx, int my)
 {
-    // // For debugging purposes.
-    // player.x = mx;
-    // player.y = my;
 }
 
 int main(int argc, char *argv[])
 {
+    parseHighScoresFile();
+
+    // Load the current player name.
     FILE *playerNameFile = fopen("saves/current_player.txt", "r");
     if (playerNameFile != NULL)
     {
         fscanf(playerNameFile, "%s", playerName);
+        toLowerString(playerName);
         fclose(playerNameFile);
     }
-
     if (strlen(playerName) == 0)
         currentPage = NAME_INPUT_PAGE;
     else
