@@ -99,7 +99,6 @@ struct Color
     int red;
     int green;
     int blue;
-    float alpha; // TODO: Is used?
 };
 
 struct TextButton
@@ -188,7 +187,7 @@ int collectedLifeCount = 0;
 Page currentPage = NONE_PAGE;
 int currentLevel = 1;
 bool isResumable = false;
-char playerNameInput[MAX_PLAYER_NAME_LENGTH + 1] = ""; // TODO: Limit to 50 characters while inputting.
+char playerNameInput[MAX_PLAYER_NAME_LENGTH + 1] = "";
 char scoreText[50] = "";
 // Current mouse position. Used for detecting hover state of buttons.
 int mouseX = 0;
@@ -205,7 +204,7 @@ MusicType currentMusicType = MENU_MUSIC;
 int gameStateUpdateTimer;
 int horizontalMovementTimer;
 int spriteAnimationTimer;
-int jumpAnimationFrame = 0; // TODO: Is this needed?
+int jumpAnimationFrame = 0;
 
 // * Game state variables
 char playerName[MAX_PLAYER_NAME_LENGTH + 1] = "";                    // Current player name.

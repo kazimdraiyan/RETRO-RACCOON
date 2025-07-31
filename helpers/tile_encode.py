@@ -1,3 +1,5 @@
+level_count = 5
+
 collider_ids = """0-6
 9-15
 20-26
@@ -27,7 +29,7 @@ FLIPPED_HORIZONTALLY_FLAG = 0x80000000
 FLIPPED_VERTICALLY_FLAG = 0x40000000
 DOES_COLLIDE_FLAG = 0x10000000
 
-for level in range(1, 6):
+for level in range(1, level_count + 1):
     try:
         level_metadata_file = open(f"levels/level{level}/metadata.txt")
         level_count = int(level_metadata_file.read().split("\n")[0])
@@ -62,6 +64,13 @@ for level in range(1, 6):
                     flipped_vertically = bool(raw_gid & FLIPPED_VERTICALLY_FLAG)
                     base_gid = raw_gid & ~(
                         FLIPPED_HORIZONTALLY_FLAG | FLIPPED_VERTICALLY_FLAG | DOES_COLLIDE_FLAG)
+
+                    if base_gid == 152: # Alternative coins
+                        base_gid = 151
+                    elif base_gid == 112: # Alternative flags
+                        base_gid = 111
+                    elif base_gid == 45 or base_gid == 46: # Alternative lives
+                        base_gid = 44
 
                     # Now re-encode
                     new_gid = base_gid

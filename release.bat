@@ -52,7 +52,10 @@ xcopy /y /q "bin\*.dll" "%RELEASE_DIR%\"
 REM Copy the assets folder to the release folder
 xcopy /e /i /y "assets" "%RELEASE_DIR%\assets"
 
-REM Copy the assets folder to the release folder
+REM Copy the levels folder to the release folder
+xcopy /e /i /y "levels" "%RELEASE_DIR%\levels"
+
+REM Copy the saves folder to the release folder
 xcopy /e /i /y "saves" "%RELEASE_DIR%\saves"
 
 endlocal
