@@ -1,2 +1,2 @@
 5
-green
+background_green.png

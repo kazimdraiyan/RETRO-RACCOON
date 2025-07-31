@@ -1,29 +1,17 @@
-#include "iGraphics.h"
+#include "iGraphics.h" // v4.0.0
 #include "iFont.h"
 #include "iSound.h"
 
-// * Bugs
-// TODO: Reckheck pausing mechanism.
-// TODO: Player direction bug.
-
 // * Optimization
-// TODO: Optimize asset loading.
 // TODO: Free images and sprites.
-// TODO: Handle keyboard control only if the current page is GAME_PAGE.
+// TODO: Use the const keyword where possible.
 
 // * Tasks
-// TODO: Add player running sprite.
-// TODO: Try to make the game full screen.
-// TODO: Divide the code into multiple files.
-// TODO: Try to use object oriented programming.
-// TODO: Extract Position and Size structs.
-// TODO: Remove the printf statements after finishing the game.
+// TODO: Make the game full screen.
+// TODO: Use Position and Size structs.
 // TODO: Add loading screen.
-// TODO: Make all snake_case variables camelCase.
-// TODO: Turn all boolean ints into booleans.
-// TODO: Sprite image count marco instead of hardcoding.
-// TODO: fclose the files.
 
+// * Questions
 // ? How often the iDraw() function is called? Is it constant or device dependent?
 
 #define TITLE "RETRO RACCOON"
@@ -33,55 +21,77 @@
 #define ROWS 18
 #define TILE_SIZE (WIDTH / COLUMNS)
 
-#define LEVEL_COUNT 5
+#define LEVEL_COUNT 5 // TODO: Get the level count from the levels folder.
+#define BUTTON_COUNT 19
+#define ICON_COUNT 2
+#define COIN_SPRITE_COUNT 2
+#define FLAG_SPRITE_COUNT 2
+#define PLAYER_IDLE_SPRITE_COUNT 4
+#define PLAYER_JUMP_SPRITE_COUNT 5
+
 #define MAX_LAYER_COUNT 10
 #define MAX_COLLECTABLE_COUNT 30
+#define MAX_PLAYER_COUNT 50
+#define MAX_PLAYER_NAME_LENGTH 20
+#define MAX_FILE_PATH_LENGTH 100
 
-#define FLIPPED_HORIZONTALLY_FLAG 0x80000000
-#define FLIPPED_VERTICALLY_FLAG 0x40000000
-#define DOES_COLLIDE_FLAG 0x10000000
+// Bitmasks to encode and decode tile ids.
+#define FLIPPED_HORIZONTALLY_FLAG 0x80000000 // 32nd (leftmost) bit
+#define FLIPPED_VERTICALLY_FLAG 0x40000000 // 31st bit
+#define DOES_COLLIDE_FLAG 0x10000000 // 29th bit
 
 #define FLAG_ID 111
-#define FULL_LIFE_ID 44
-#define NO_LIFE_ID 46
 #define COIN_ID 151
 #define DIAMOND_ID 67
+#define FULL_LIFE_ID 44
+#define NO_LIFE_ID 46
 
 #define COIN_SCORE 10
 #define DIAMOND_SCORE 50
+#define PLAYER_INITIAL_X 200
+#define PLAYER_INITIAL_Y 300
+#define X_ANIMATION_DEL_X 5 // Number of pixels to move the player in each animation frame.
+#define GRAVITY 80
+#define JUMP_VELOCITY 150
+#define DEL_T 0.08 // Time step for calculating vertical movement.
 
-#define PLAYER_INITIAL_X 200 // 1200
-#define PLAYER_INITIAL_Y 300 // 500
-#define X_ANIMATION_DEL_X 5
+#define FONT_PATH "assets/fonts/minecraft_ten.ttf"
 
-// TODO: Learn more about enum.
-enum Direction
-{
-    LEFT,
-    RIGHT,
-    UP,
-    DOWN
-};
+const int trapIds[] = {68, 33, 34, 35, 53, 54, 55, 73, 74, 75}; // IDs of the tiles that are traps.
 
 enum Page
 {
     NAME_INPUT_PAGE,
     MENU_PAGE,
-    GAME_PAGE,
     LEVELS_PAGE,
     HIGH_SCORES_PAGE,
     OPTIONS_PAGE,
-    GAME_OVER_PAGE,
-    WIN_PAGE,
     HELP_PAGE,
     CREDITS_PAGE,
+    GAME_PAGE,
+    WIN_PAGE,
+    GAME_OVER_PAGE,
+    NONE_PAGE
 };
 
 enum MusicType
 {
     MENU_MUSIC,
     GAME_MUSIC,
-    NONE
+    NONE_MUSIC
+};
+
+enum Direction
+{
+    LEFT,
+    RIGHT,
+};
+
+enum BackgroundImageColor
+{
+    BROWN,
+    BLUE,
+    GREEN
 };
 
 struct Color
@@ -89,10 +99,10 @@ struct Color
     int red;
     int green;
     int blue;
-    float alpha;
+    float alpha; // TODO: Is used?
 };
 
-struct Button
+struct TextButton
 {
     int x;
     int y;
@@ -102,14 +112,15 @@ struct Button
     Color textColor;
     char *text;
     int fontSize;
+    // Offset to make the text centered by trial and error.
     int xOffset;
     int yOffset;
-    Page page;
+    Page page; // Which page the text button is rendered on.
     void (*onClick)(void);
-    bool isHovered;
+    bool hasBeenHovered;
 };
 
-struct Icon
+struct IconButton
 {
     int x;
     int y;
@@ -117,96 +128,97 @@ struct Icon
     int height;
     Color bgColor;
     Image *image;
+    // Offset to make the icon centered by trial and error.
     int xOffset;
     int yOffset;
-    Page page;
+    Page page; // Which page the icon button is rendered on.
     void (*onClick)(void);
-    bool isHovered;
+    bool hasBeenHovered;
 };
 
 struct Player
 {
-    int x = PLAYER_INITIAL_X;
-    double y = PLAYER_INITIAL_Y;
-    double width = TILE_SIZE;
-    double height = TILE_SIZE;
-    Direction direction = RIGHT;
+    int x; // The current x-position of the player sprite.
+    double y;
+    double width;
+    double height;
+    int animateToX; // The x-position to which the player is moving. It is the target x-position. It is a multiple of TILE_SIZE.
+    double velocityY;
+    bool isJumping; // isJumping tells whether the player just jumped or not. It is different from isOnAir. // TODO: Handle the jump in a better way?
+    bool isOnAir;
+    Direction direction;
 };
 
-// * Game UI management variables
-Page currentPage;
-int currentLevel = 1;
-int isResumable = 0;
-int isFirstDraw = 1;
-char levelCompletionText[50]; // TODO: Find a better way to handle this.
-char scoreText[50];
-char playerNameInput[50];
-int mouseX = 0;
-int mouseY = 0;
-
 // * Asset management variables
-Image background_image;
+Image tileImages[ROWS * COLUMNS];
+Image backgroundImage;
 Image yellowStarImage;
 Image whiteStarImage;
-Image audioOffImage;
 Image audioOnImage;
-Image lifeImages[2];
-Image tileImages[180]; // TODO: Load only the tiles that are needed.
-Image coinFrames[2];
+Image audioOffImage;
+Image fullLifeImage;
+Image noLifeImage;
+Image coinFrames[COIN_SPRITE_COUNT];
 Sprite coinSprite;
-Image flagFrames[2];
+Image flagFrames[FLAG_SPRITE_COUNT];
 Sprite flagSprite;
-Image playerIdleFrames[4];
+Image playerIdleFrames[PLAYER_IDLE_SPRITE_COUNT];
 Sprite playerIdleSprite;
-Image playerJumpFrames[5];
+Image playerJumpFrames[PLAYER_JUMP_SPRITE_COUNT];
 Sprite playerJumpSprite;
-int loadedLevels[LEVEL_COUNT] = {0};
-int layerCount[LEVEL_COUNT] = {0};
-int tiles[MAX_LAYER_COUNT][ROWS][COLUMNS][3] = {};
-int doesCollideArray[ROWS][COLUMNS] = {};
-int coinArray[ROWS][COLUMNS] = {};
-int diamondArray[ROWS][COLUMNS] = {};
-int lifeArray[ROWS][COLUMNS] = {};
-int trapArray[ROWS][COLUMNS] = {};
-int trapIds[] = {68, 33, 34, 35, 53, 54, 55, 73, 74, 75};
 
-// * Sound management variables
-int backgroundMusicChannel = -1;
-MusicType currentMusicType = MENU_MUSIC;
-bool isBackgroundMusicPlaying = false;
-bool isMusicOn = true;
-bool isSoundOn = true;
-
-// * Game state variables
-int playerCount = 0;
-char playerNames[50][100] = {};
-int highScores[50][LEVEL_COUNT][2] = {}; // Max 50 players, LEVEL_COUNT levels, 2 scores (stars and score)
-char playerName[51] = "";
-int gameStateUpdateTimer;
-int horizontalMovementTimer;
-int spriteAnimationTimer; // TODO: Create separate timer for each sprite animation?
-Player player;
-int animateToX = player.x;
-double velocityY = 0;
-int score = 0;
-int lifeCount = 3;
-int starCount = 0;
-// TODO: Include these in the player struct.
-// TODO: Handle the jump in a better way?
-bool isJumping = false; // isJumping tells whether the player just jumped or not.
-bool isOnAir = false;
-int jumpAnimationFrame = 0;
-double gravity = 80;
-
+// * Level management variables
+int layerCount = 0;                           // How many layers are in the current level.
+int tiles[MAX_LAYER_COUNT][ROWS][COLUMNS][3]; // Each cell has 3 information: tile id, is flipped horizontally, is flipped vertically.
+// Grid arrays: contains extra information about each cell.
+bool doesCollideArray[ROWS][COLUMNS]; // true if there is a tile in the cell that is a collider, false otherwise.
+bool coinArray[ROWS][COLUMNS];
+bool diamondArray[ROWS][COLUMNS];
+bool lifeArray[ROWS][COLUMNS];
+bool trapArray[ROWS][COLUMNS];
 // Stores the row and column of the collected coins and diamonds.
-int collectedCoins[MAX_COLLECTABLE_COUNT][2] = {};
-int collectedDiamonds[MAX_COLLECTABLE_COUNT][2] = {};
-int collectedLife[MAX_COLLECTABLE_COUNT][2] = {};
+int collectedCoins[MAX_COLLECTABLE_COUNT][2];
+int collectedDiamonds[MAX_COLLECTABLE_COUNT][2];
+int collectedLives[MAX_COLLECTABLE_COUNT][2];
 int collectedCoinCount = 0;
 int collectedDiamondCount = 0;
 int collectedLifeCount = 0;
 
+// * UI management variables
+Page currentPage = NONE_PAGE;
+int currentLevel = 1;
+bool isResumable = false;
+char playerNameInput[MAX_PLAYER_NAME_LENGTH + 1] = ""; // TODO: Limit to 50 characters while inputting.
+char scoreText[50] = "";
+// Current mouse position. Used for detecting hover state of buttons.
+int mouseX = 0;
+int mouseY = 0;
+
+// * Sound management variables
+int backgroundMusicChannel = -1;
+bool isMusicPlaying = false;
+bool isMusicOn = true;
+bool isSoundOn = true;
+MusicType currentMusicType = MENU_MUSIC;
+
+// * Timer variables for animation
+int gameStateUpdateTimer;
+int horizontalMovementTimer;
+int spriteAnimationTimer;
+int jumpAnimationFrame = 0; // TODO: Is this needed?
+
+// * Game state variables
+char playerName[MAX_PLAYER_NAME_LENGTH + 1] = "";                    // Current player name.
+int playerCount = 0;                                                 // Number of players in the high scores.
+char playerNames[MAX_PLAYER_COUNT][MAX_PLAYER_NAME_LENGTH + 1] = {}; // Max MAX_PLAYER_COUNT players, 20 characters per player name.
+int highScores[MAX_PLAYER_COUNT][LEVEL_COUNT][2] = {};               // Max MAX_PLAYER_COUNT players, LEVEL_COUNT levels, 2 scores (stars and score).
+Player player;
+int score = 0;
+int lifeCount = 3;
+int starCount = 0;
+
 // * These functions acts as UI Widgets.
+// Page rendering functions.
 void drawNameInputPage();
 void drawMenuPage();
 void drawLevelsPage();
@@ -214,14 +226,16 @@ void drawHighScoresPage();
 void drawOptionsPage();
 void drawHelpPage();
 void drawCreditsPage();
+void drawGamePage();
 void drawWinPage();
 void drawGameOverPage();
-
+// UI rendering functions.
 void drawScore();
 void drawLifeCount();
-void drawTile(int layer, int row, int col, Sprite *sprite = NULL);
 void drawTiles();
-void drawButton(Button &button);
+void drawTile(int layer, int row, int col, Sprite *sprite = NULL);
+void drawTextButton(TextButton &button);
+void drawIconButton(IconButton &icon);
 
 // * Background music management functions
 void playBackgroundMusic(MusicType musicType);
@@ -239,12 +253,20 @@ void toLowerString(char *str)
 
 bool isStringWhitespace(char *str)
 {
-    for (int i = 0; i < strlen(str); i++)
+    for (int i = 0; str[i] != '\0'; i++)
     {
         if (!isspace(str[i]))
-        {
             return false;
-        }
+    }
+    return true;
+}
+
+bool isNewPlayer()
+{
+    for (int i = 0; i < playerCount; i++)
+    {
+        if (strcmp(playerNames[i], playerName) == 0)
+            return false;
     }
     return true;
 }
@@ -259,8 +281,41 @@ bool isTrap(int id)
     return false;
 }
 
+bool isAlreadyCollected(int row, int col, int collectedCollectableArray[][2], int *collectedCollectableCount)
+{
+    for (int i = 0; i < *collectedCollectableCount; i++)
+    {
+        if (collectedCollectableArray[i][0] == row && collectedCollectableArray[i][1] == col)
+            return true;
+    }
+    return false;
+}
+
+void mirrorTile(int tileId, MirrorState mirrorState, Sprite *sprite = NULL)
+{
+    if (sprite == NULL)
+        iMirrorImage(&tileImages[tileId], mirrorState);
+    else
+        iMirrorSprite(sprite, mirrorState);
+}
+
+// Checks the number of a collectable type in the grid.
+int collectableCount(bool collectableArray[ROWS][COLUMNS])
+{
+    int count = 0;
+    for (int i = 0; i < ROWS; i++)
+    {
+        for (int j = 0; j < COLUMNS; j++)
+        {
+            if (collectableArray[i][j])
+                count++;
+        }
+    }
+    return count;
+}
+
 // * Initialization functions
-void initializeGridArrays(int array[ROWS][COLUMNS], int value)
+void initializeGridArray(bool array[ROWS][COLUMNS], bool value)
 {
     for (int row = 0; row < ROWS; row++)
     {
@@ -271,11 +326,20 @@ void initializeGridArrays(int array[ROWS][COLUMNS], int value)
     }
 }
 
+void initializeCollectedCollectables(int collectedCollectableArray[MAX_COLLECTABLE_COUNT][2])
+{
+    for (int i = 0; i < MAX_COLLECTABLE_COUNT; i++)
+    {
+        collectedCollectableArray[i][0] = -1;
+        collectedCollectableArray[i][1] = -1;
+    }
+}
+
 void initializeHighScores()
 {
-    for (int i = 0; i < 50; i++)
+    for (int i = 0; i < MAX_PLAYER_COUNT; i++)
     {
-        for (int j = 0; j < 5; j++)
+        for (int j = 0; j < LEVEL_COUNT; j++)
         {
             highScores[i][j][0] = 0;
             highScores[i][j][1] = 0;
@@ -283,36 +347,221 @@ void initializeHighScores()
     }
 }
 
-void parseHighScoresFile()
+void initializePlayer()
+{
+    player.x = PLAYER_INITIAL_X;
+    player.y = PLAYER_INITIAL_Y;
+    player.width = TILE_SIZE;
+    player.height = TILE_SIZE;
+    player.animateToX = PLAYER_INITIAL_X;
+    player.velocityY = 0;
+    player.isJumping = false;
+    player.isOnAir = false;
+    if (player.direction == LEFT)
+    {
+        player.direction = RIGHT;
+        iMirrorSprite(&playerIdleSprite, HORIZONTAL);
+        iMirrorSprite(&playerJumpSprite, HORIZONTAL);
+    }
+    jumpAnimationFrame = 0;
+}
+
+// * Loading functions
+void loadAssets()
+{
+    // * iResizeImage is not used, as using it makes the tiles blurry for some reason. Instead, the image assests are pre-resized.
+
+    // Load tiles
+    for (int i = 0; i < 180; i++)
+    {
+        // TODO: Optimize this by not loading the tiles that are not used in any level.
+        char filePath[MAX_FILE_PATH_LENGTH];
+        sprintf(filePath, "assets/tiles/%d.png", i);
+        iLoadImage(&tileImages[i], filePath);
+    }
+
+    // Load star image
+    iLoadImage(&yellowStarImage, "assets/icons/star_yellow.png");
+    iLoadImage(&whiteStarImage, "assets/icons/star_white.png");
+
+    // Load audio on/off images
+    iLoadImage(&audioOnImage, "assets/icons/audio_on.png");
+    iLoadImage(&audioOffImage, "assets/icons/audio_off.png");
+
+    // Load life images
+    iLoadImage(&fullLifeImage, "assets/special_tiles/full_life.png");
+    iLoadImage(&noLifeImage, "assets/special_tiles/no_life.png");
+
+    // Load coin sprite
+    iLoadFramesFromFolder(coinFrames, "assets/sprites/coin/");
+    iInitSprite(&coinSprite);
+    iChangeSpriteFrames(&coinSprite, coinFrames, COIN_SPRITE_COUNT);
+    iResizeSprite(&coinSprite, TILE_SIZE, TILE_SIZE);
+
+    // Load flag sprite
+    iLoadFramesFromFolder(flagFrames, "assets/sprites/flag/");
+    iInitSprite(&flagSprite);
+    iChangeSpriteFrames(&flagSprite, flagFrames, FLAG_SPRITE_COUNT);
+    iResizeSprite(&flagSprite, TILE_SIZE, TILE_SIZE);
+
+    // Load player idle sprite
+    iLoadFramesFromFolder(playerIdleFrames, "assets/sprites/player/idle/");
+    iInitSprite(&playerIdleSprite);
+    iChangeSpriteFrames(&playerIdleSprite, playerIdleFrames, PLAYER_IDLE_SPRITE_COUNT);
+    iResizeSprite(&playerIdleSprite, TILE_SIZE, TILE_SIZE);
+
+    // Load player jump sprite
+    iLoadFramesFromFolder(playerJumpFrames, "assets/sprites/player/jump/");
+    iInitSprite(&playerJumpSprite);
+    iChangeSpriteFrames(&playerJumpSprite, playerJumpFrames, PLAYER_JUMP_SPRITE_COUNT);
+    iResizeSprite(&playerJumpSprite, TILE_SIZE, TILE_SIZE);
+}
+
+void loadLevel(int level)
+{
+    // Grid arrays should be initialized every time a level is loaded.
+    initializeGridArray(doesCollideArray, false);
+    initializeGridArray(coinArray, false);
+    initializeGridArray(diamondArray, false);
+    initializeGridArray(lifeArray, false);
+    initializeGridArray(trapArray, false);
+
+    char levelMetadataFilePath[MAX_FILE_PATH_LENGTH];
+    sprintf(levelMetadataFilePath, "levels/level%d/metadata.txt", level);
+    FILE *levelMetadataFile = fopen(levelMetadataFilePath, "r");
+    if (levelMetadataFile == NULL)
+    {
+        printf("levels/level%d/metadata.txt file not found\n", level);
+        return;
+    }
+    char levelBackgroundFileName[50];
+    fscanf(levelMetadataFile, "%d %s", &layerCount, levelBackgroundFileName);
+    char levelBackgroundFilePath[MAX_FILE_PATH_LENGTH];
+    sprintf(levelBackgroundFilePath, "assets/backgrounds/%s", levelBackgroundFileName);
+    fclose(levelMetadataFile);
+
+    // TODO: Optimize this by not loading the background if it was loaded once.
+    iLoadImage(&backgroundImage, levelBackgroundFilePath);
+
+    for (int layer = 0; layer < layerCount; layer++)
+    {
+        char layerFilePath[MAX_FILE_PATH_LENGTH];
+        sprintf(layerFilePath, "levels/level%d/layer_%d_customized.csv", level, layer);
+        FILE *layerFile = fopen(layerFilePath, "r");
+        if (layerFile == NULL)
+        {
+            printf("levels/level%d/layer_%d_customized.csv file not found\n", level, layer);
+            return;
+        }
+
+        char line[500];
+        int row = 0;
+        while (fgets(line, 500, layerFile))
+        {
+            char *cell;
+            cell = strtok(line, ",\n");
+            int col = 0;
+            while (cell)
+            {
+                int encodedId = atoi(cell);
+                if (encodedId == -1)
+                {
+                    tiles[layer][row][col][0] = -1;
+                    tiles[layer][row][col][1] = false;
+                    tiles[layer][row][col][2] = false;
+                }
+                else
+                {
+                    bool isFlippedHorizontally = (encodedId & FLIPPED_HORIZONTALLY_FLAG) != 0;
+                    bool isFlippedVertically = (encodedId & FLIPPED_VERTICALLY_FLAG) != 0;
+                    bool doesCollide = (encodedId & DOES_COLLIDE_FLAG) != 0;
+
+                    // Mask out the flags to get the decoded ID.
+                    int id = encodedId & ~(FLIPPED_HORIZONTALLY_FLAG | FLIPPED_VERTICALLY_FLAG | DOES_COLLIDE_FLAG);
+                    tiles[layer][row][col][0] = id;
+                    tiles[layer][row][col][1] = isFlippedHorizontally;
+                    tiles[layer][row][col][2] = isFlippedVertically;
+                    if (doesCollide)
+                        doesCollideArray[row][col] = true;
+
+                    if (id == COIN_ID)
+                        coinArray[row][col] = true;
+                    else if (id == DIAMOND_ID)
+                        diamondArray[row][col] = true;
+                    else if (isTrap(id))
+                        trapArray[row][col] = true;
+                    else if (id == FULL_LIFE_ID)
+                        lifeArray[row][col] = true;
+                }
+                cell = strtok(NULL, ",\n"); // Get the next cell.
+                col++;
+            }
+            row++;
+        }
+        fclose(layerFile);
+    }
+}
+
+void loadPlayerName()
+{
+    FILE *playerNameFile = fopen("saves/current_player.txt", "r");
+    if (playerNameFile == NULL)
+    {
+        printf("saves/current_player.txt file not found\n");
+        return;
+    }
+
+    fgets(playerName, MAX_PLAYER_NAME_LENGTH + 1, playerNameFile);
+    playerName[strcspn(playerName, "\n")] = '\0'; // Remove the newline character.
+    toLowerString(playerName);
+
+    fclose(playerNameFile);
+}
+
+void loadOptions()
+{
+    FILE *optionsFile = fopen("saves/options.txt", "r");
+    if (optionsFile == NULL)
+    {
+        printf("saves/options.txt file not found\n");
+        return;
+    }
+
+    fscanf(optionsFile, "%d %d", &isMusicOn, &isSoundOn);
+    fclose(optionsFile);
+}
+
+void loadHighScores()
 {
     FILE *highScoresFile = fopen("saves/high_scores.txt", "r");
     if (highScoresFile == NULL)
     {
-        printf("Error opening file\n");
+        printf("saves/high_scores.txt file not found\n");
         return;
     }
-    else
+
+    fscanf(highScoresFile, "%d", &playerCount);
+    for (int i = 0; i < playerCount; i++)
     {
-        fscanf(highScoresFile, "%d", &playerCount);
-        for (int i = 0; i < playerCount; i++)
+        fgetc(highScoresFile); // Skip the newline character.
+        fgets(playerNames[i], MAX_PLAYER_NAME_LENGTH + 1, highScoresFile);
+        playerNames[i][strcspn(playerNames[i], "\n")] = '\0'; // Remove the newline character.
+        toLowerString(playerNames[i]);
+        for (int j = 0; j < LEVEL_COUNT; j++)
         {
-            fscanf(highScoresFile, "%s", playerNames[i]);
-            toLowerString(playerNames[i]);
-            for (int j = 0; j < 5; j++)
-            {
-                fscanf(highScoresFile, "%d,%d", &highScores[i][j][0], &highScores[i][j][1]);
-            }
+            fscanf(highScoresFile, "%d,%d", &highScores[i][j][0], &highScores[i][j][1]);
         }
     }
     fclose(highScoresFile);
 }
 
-void saveHighScoresFile()
+// * Saving functions
+void saveHighScores()
 {
     FILE *highScoresFile = fopen("saves/high_scores.txt", "w");
     if (highScoresFile == NULL)
     {
-        printf("Error creating file\n");
+        printf("Error creating file: saves/high_scores.txt\n");
         return;
     }
     fprintf(highScoresFile, "%d\n", playerCount);
@@ -320,7 +569,7 @@ void saveHighScoresFile()
     {
         toLowerString(playerNames[i]);
         fprintf(highScoresFile, "%s\n", playerNames[i]);
-        for (int j = 0; j < 5; j++)
+        for (int j = 0; j < LEVEL_COUNT; j++)
         {
             fprintf(highScoresFile, "%d,%d\n", highScores[i][j][0], highScores[i][j][1]);
         }
@@ -328,244 +577,141 @@ void saveHighScoresFile()
     fclose(highScoresFile);
 }
 
-void saveOptionsFile()
+void saveOptions()
 {
     FILE *optionsFile = fopen("saves/options.txt", "w");
+    if (optionsFile == NULL)
+    {
+        printf("Error creating file: saves/options.txt\n");
+        return;
+    }
     fprintf(optionsFile, "%d %d", isMusicOn, isSoundOn);
     fclose(optionsFile);
 }
 
-void loadLevel(int level)
+// * Background music management functions
+void stopBackgroundMusic()
 {
-    // ? Should I initialize the arrays here?
-    initializeGridArrays(doesCollideArray, 0);
-    initializeGridArrays(coinArray, 0);
-    initializeGridArrays(diamondArray, 0);
-    initializeGridArrays(lifeArray, 0);
-    initializeGridArrays(trapArray, 0);
-
-    // Initialize the collected collectables.
-    for (int i = 0; i < MAX_COLLECTABLE_COUNT; i++)
+    if (isMusicPlaying)
     {
-        collectedCoins[i][0] = -1;
-        collectedCoins[i][1] = -1;
-        collectedDiamonds[i][0] = -1;
-        collectedDiamonds[i][1] = -1;
-        collectedLife[i][0] = -1;
-        collectedLife[i][1] = -1;
+        iStopSound(backgroundMusicChannel);
+        currentMusicType = NONE_MUSIC;
+        isMusicPlaying = false;
     }
-
-    char level_metadata_filename[100];
-    char level_background_filename[100];
-    sprintf(level_metadata_filename, "levels/level%d/metadata.txt", level);
-    FILE *level_metadata_file = fopen(level_metadata_filename, "r");
-    if (level_metadata_file == NULL)
-    {
-        printf("Level metadata file open failed\n");
-        return;
-    }
-    char level_color[50];
-    fscanf(level_metadata_file, "%d %s", &layerCount[level - 1], level_color);
-    sprintf(level_background_filename, "assets/backgrounds/background_%s.png", level_color);
-    fclose(level_metadata_file);
-
-    // TODO: Optimize this by not loading the background if it was loaded once.
-    iLoadImage(&background_image, level_background_filename);
-    iResizeImage(&background_image, WIDTH, HEIGHT);
-
-    for (int layer = 0; layer < layerCount[level - 1]; layer++)
-    {
-        char layer_file_name[100];
-        sprintf(layer_file_name, "levels/level%d/layer_%d_customized.csv", level, layer);
-        FILE *layer_file = fopen(layer_file_name, "r");
-        if (layer_file == NULL)
-        {
-            printf("Layer file open failed\n");
-            return;
-        }
-
-        char line[1000]; // TODO: Adjust the size
-        int row = 0;
-        // TODO: Learn how this works in-depth.
-        while (fgets(line, sizeof(line), layer_file))
-        {
-            char *cell;
-            cell = strtok(line, ",\n");
-            int col = 0;
-            while (cell)
-            {
-                int gid = atoi(cell);
-                if (gid == -1)
-                {
-                    tiles[layer][row][col][0] = -1;
-                    tiles[layer][row][col][1] = 0;
-                    tiles[layer][row][col][2] = 0;
-                }
-                else
-                {
-                    int flip_h = (gid & FLIPPED_HORIZONTALLY_FLAG) != 0;
-                    int flip_v = (gid & FLIPPED_VERTICALLY_FLAG) != 0;
-                    int does_collide = (gid & DOES_COLLIDE_FLAG) != 0;
-
-                    // Mask out flip flags to get actual GID
-                    int id = gid & ~(FLIPPED_HORIZONTALLY_FLAG | FLIPPED_VERTICALLY_FLAG | DOES_COLLIDE_FLAG);
-                    tiles[layer][row][col][0] = id;
-                    tiles[layer][row][col][1] = flip_h;
-                    tiles[layer][row][col][2] = flip_v;
-                    if (does_collide == 1)
-                    {
-                        doesCollideArray[row][col] = 1;
-                    }
-                    if (id == COIN_ID)
-                    {
-                        coinArray[row][col] = 1;
-                    }
-                    else if (id == DIAMOND_ID)
-                    {
-                        diamondArray[row][col] = 1;
-                    }
-                    else if (isTrap(id))
-                    {
-                        trapArray[row][col] = 1;
-                    }
-                    else if (id == FULL_LIFE_ID)
-                    {
-                        lifeArray[row][col] = 1;
-                    }
-                }
-                cell = strtok(NULL, ",\n");
-                col++;
-            }
-            row++;
-        }
-        fclose(layer_file);
-    }
-    loadedLevels[level - 1] = 1;
 }
 
-void loadAssets()
+void playBackgroundMusic(MusicType musicType)
 {
-    // Load tiles
-    for (int i = 0; i < 180; i++)
+    stopBackgroundMusic();
+
+    if (isMusicOn)
     {
-        char filename[100];
-        sprintf(filename, "assets/tiles/%d.png", i);
-        iLoadImage(&tileImages[i], filename);
-        iResizeImage(&tileImages[i], TILE_SIZE, TILE_SIZE);
+        const char *musicFile;
+        if (musicType == MENU_MUSIC)
+        {
+            backgroundMusicChannel = iPlaySound("assets/sounds/menu_bg.wav", true, 50);
+            currentMusicType = MENU_MUSIC;
+        }
+        else if (musicType == GAME_MUSIC)
+        {
+            // Game music volume is lower than the menu music volume.
+            backgroundMusicChannel = iPlaySound("assets/sounds/game_bg.wav", true, 30);
+            currentMusicType = GAME_MUSIC;
+        }
+        isMusicPlaying = true;
     }
-
-    // Load star image
-    iLoadImage(&yellowStarImage, "assets/icons/star_yellow.png");
-    iLoadImage(&whiteStarImage, "assets/icons/star_white.png");
-
-    // Load audio off/on images
-    iLoadImage(&audioOffImage, "assets/icons/audio_off.png");
-    iLoadImage(&audioOnImage, "assets/icons/audio_on.png");
-
-    // Load life images
-    iLoadImage(&lifeImages[0], "assets/special_tiles/no_life.png");
-    iLoadImage(&lifeImages[1], "assets/special_tiles/full_life.png");
-
-    // Load coin sprite
-    iLoadFramesFromFolder(coinFrames, "assets/sprites/coin/");
-    iInitSprite(&coinSprite);
-    iChangeSpriteFrames(&coinSprite, coinFrames, 2);
-    iResizeSprite(&coinSprite, TILE_SIZE, TILE_SIZE);
-
-    iLoadFramesFromFolder(flagFrames, "assets/sprites/flag/");
-    iInitSprite(&flagSprite);
-    iChangeSpriteFrames(&flagSprite, flagFrames, 2);
-    iResizeSprite(&flagSprite, TILE_SIZE, TILE_SIZE);
-
-    // Load player sprite
-    iLoadFramesFromFolder(playerIdleFrames, "assets/sprites/player/idle/");
-    iInitSprite(&playerIdleSprite);
-    iChangeSpriteFrames(&playerIdleSprite, playerIdleFrames, 4);
-    iResizeSprite(&playerIdleSprite, TILE_SIZE, TILE_SIZE);
-
-    iLoadFramesFromFolder(playerJumpFrames, "assets/sprites/player/jump/");
-    iInitSprite(&playerJumpSprite);
-    iChangeSpriteFrames(&playerJumpSprite, playerJumpFrames, 5);
-    iResizeSprite(&playerJumpSprite, TILE_SIZE, TILE_SIZE);
-
-    iInitializeFont();
-    iInitializeSound();
-
-    playBackgroundMusic(MENU_MUSIC);
 }
 
+void switchBackgroundMusic(MusicType newMusicType)
+{
+    if (newMusicType != currentMusicType)
+        playBackgroundMusic(newMusicType);
+}
+
+// * Game management functions
+void pauseGame()
+{
+    currentPage = MENU_PAGE;
+    switchBackgroundMusic(MENU_MUSIC);
+
+    iPauseTimer(gameStateUpdateTimer);
+    iPauseTimer(horizontalMovementTimer);
+    iPauseTimer(spriteAnimationTimer);
+}
+
+void resumeGame()
+{
+    currentPage = GAME_PAGE;
+    switchBackgroundMusic(GAME_MUSIC);
+
+    iResumeTimer(gameStateUpdateTimer);
+    iResumeTimer(horizontalMovementTimer);
+    iResumeTimer(spriteAnimationTimer);
+}
+
+// Called when playing a new game instead of resuming.
 void resetGame()
 {
-    // TODO: Check this rigorously.
-    iPauseTimer(gameStateUpdateTimer);
-    iPauseTimer(spriteAnimationTimer);
-    player.x = PLAYER_INITIAL_X;
-    player.y = PLAYER_INITIAL_Y;
-    animateToX = player.x;
-    velocityY = 0;
-    player.direction = RIGHT;
-    isJumping = false;
-    jumpAnimationFrame = 0;
-    isResumable = 0;
-    lifeCount = 3;
+    isResumable = false;
 
-    sprintf(scoreText, "Score: %d", score);
-    score = 0;
+    iPauseTimer(gameStateUpdateTimer);
+    iPauseTimer(horizontalMovementTimer);
+    iPauseTimer(spriteAnimationTimer);
+
+    initializePlayer();
+
+    // Collected collectables should be initialized every time the game is reset.
+    initializeCollectedCollectables(collectedCoins);
+    initializeCollectedCollectables(collectedDiamonds);
+    initializeCollectedCollectables(collectedLives);
 
     // Reset the collected collectables.
     collectedCoinCount = 0;
     collectedDiamondCount = 0;
     collectedLifeCount = 0;
-    for (int i = 0; i < MAX_COLLECTABLE_COUNT; i++)
-    {
-        collectedCoins[i][0] = -1;
-        collectedCoins[i][1] = -1;
-        collectedDiamonds[i][0] = -1;
-        collectedDiamonds[i][1] = -1;
-        collectedLife[i][0] = -1;
-        collectedLife[i][1] = -1;
-    }
 
-    initializeGridArrays(doesCollideArray, 0);
-    initializeGridArrays(coinArray, 0);
-    initializeGridArrays(diamondArray, 0);
-    initializeGridArrays(lifeArray, 0);
-    initializeGridArrays(trapArray, 0);
-}
-
-int collectableCount(int collectableArray[ROWS][COLUMNS])
-{
-    int count = 0;
-    for (int i = 0; i < ROWS; i++)
-    {
-        for (int j = 0; j < COLUMNS; j++)
-        {
-            if (collectableArray[i][j])
-            {
-                count++;
-            }
-        }
-    }
-    return count;
+    score = 0;
+    lifeCount = 3;
 }
 
 void changeLevel(int level)
 {
     resetGame();
-    currentPage = GAME_PAGE;
-    currentLevel = level;
-    loadLevel(level);
 
-    switchBackgroundMusic(GAME_MUSIC);
+    loadLevel(level);
+    currentLevel = level;
+
+    resumeGame();
+    isResumable = true;
 }
 
-struct Button buttons[50] = {
-    {WIDTH - 400, 620, 380, 80, {0, 0, 0}, {200, 200, 200}, "RESUME", 40, 2, 0, MENU_PAGE, []()
-     {
-         currentPage = GAME_PAGE;
-         switchBackgroundMusic(GAME_MUSIC);
-     },
-     false},
+void checkAndUpdateHighScores()
+{
+    for (int i = 0; i < playerCount; i++)
+    {
+        if (strcmp(playerNames[i], playerName) == 0)
+        {
+            if (starCount > highScores[i][currentLevel - 1][0])
+            {
+                highScores[i][currentLevel - 1][0] = starCount;
+                highScores[i][currentLevel - 1][1] = score;
+                saveHighScores();
+            }
+            else if (starCount == highScores[i][currentLevel - 1][0] && score > highScores[i][currentLevel - 1][1])
+            {
+                highScores[i][currentLevel - 1][1] = score;
+                saveHighScores();
+            }
+            break;
+        }
+    }
+}
+
+// * Buttons
+// TODO: Make the array 2D, where rows will represent pages and columns will represent buttons in the respective page.
+struct TextButton buttons[] = {
+    // * MENU_PAGE (0 - 6)
+    {WIDTH - 400, 620, 380, 80, {0, 0, 0}, {200, 200, 200}, "RESUME", 40, 2, 0, MENU_PAGE, resumeGame, false},
     {WIDTH - 400, 520, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVELS", 40, 10, 0, MENU_PAGE, []()
      {
          currentPage = LEVELS_PAGE;
@@ -591,10 +737,10 @@ struct Button buttons[50] = {
          currentPage = CREDITS_PAGE;
      },
      false},
-    {WIDTH - 400, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "EXIT", 40, 6, 0, MENU_PAGE, []()
-     { iCloseWindow(); },
-     false},
+    {WIDTH - 400, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "EXIT", 40, 6, 0, MENU_PAGE, iCloseWindow, false},
 
+    // * LEVELS_PAGE (7 - 11)
+    // TODO: Add a function to initialize the level buttons.
     {WIDTH / 2 - 180, 500, 380, 80, {0, 0, 0}, {200, 200, 200}, "LEVEL 1", 40, 8, 0, LEVELS_PAGE, []()
      { changeLevel(1); },
      false},
@@ -611,6 +757,7 @@ struct Button buttons[50] = {
      { changeLevel(5); },
      false},
 
+    // * GAME_OVER_PAGE (12 - 13)
     {180, 120, 380, 100, {0, 0, 0}, {200, 200, 200}, "MAIN MENU", 40, 6, 0, GAME_OVER_PAGE, []()
      {
          currentPage = MENU_PAGE;
@@ -619,13 +766,11 @@ struct Button buttons[50] = {
      false},
     {WIDTH / 2 + 80, 120, 380, 100, {0, 0, 0}, {200, 200, 200}, "TRY AGAIN", 40, 16, 0, GAME_OVER_PAGE, []()
      {
-         currentPage = GAME_PAGE;
          changeLevel(currentLevel);
-         switchBackgroundMusic(GAME_MUSIC);
      },
      false},
 
-    // WIN_PAGE
+    // * WIN_PAGE (14 - 16)
     {80, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "MAIN MENU", 40, 6, 0, WIN_PAGE, []()
      {
          currentPage = MENU_PAGE;
@@ -634,30 +779,31 @@ struct Button buttons[50] = {
      false},
     {WIDTH / 2 - 158, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "PLAY AGAIN", 40, 16, 0, WIN_PAGE, []()
      {
-         currentPage = GAME_PAGE;
          changeLevel(currentLevel);
-         switchBackgroundMusic(GAME_MUSIC);
      },
      false},
-    {WIDTH / 2 + 240, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "", 40, 16, 0, WIN_PAGE, []() {}, false}, // Placeholder for the third button
+    {WIDTH / 2 + 240, 80, 320, 100, {0, 0, 0}, {200, 200, 200}, "", 40, 16, 0, WIN_PAGE, []() {}, false}, // Placeholder for the third button. Can be "Next Level" or "Exit".
 
-    // HELP_PAGE
-    {WIDTH - 400, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "BACK", 40, 6, 0, LEVELS_PAGE, []()
-     {
-         currentPage = MENU_PAGE;
-     },
-     false},
-
-    // OPTIONS_PAGE
+    // * OPTIONS_PAGE (17)
     {40, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "Edit Name", 40, 6, 0, OPTIONS_PAGE, []()
      {
          strcpy(playerNameInput, playerName);
          currentPage = NAME_INPUT_PAGE;
      },
      false},
-}; // TODO: Add extra dimension for pages?
 
-struct Icon icons[2] = {
+    // * Back Button (18)
+    {WIDTH - 400, 20, 380, 80, {0, 0, 0}, {200, 200, 200}, "BACK", 40, 6, 0, NONE_PAGE, []()
+     {
+         currentPage = MENU_PAGE;
+         switchBackgroundMusic(MENU_MUSIC);
+     },
+     false}, // Placeholder for the back button. Can be on any page.
+
+};
+
+struct IconButton icons[2] = {
+    // * OPTIONS_PAGE (0 - 1)
     // Music on/off
     {WIDTH / 2 - 100, HEIGHT / 2, 60, 60, {0, 0, 0}, NULL, 0, -3, OPTIONS_PAGE, []()
      {
@@ -670,97 +816,89 @@ struct Icon icons[2] = {
          {
              stopBackgroundMusic();
          }
-         saveOptionsFile();
+         saveOptions();
      },
      false},
     // Sound on/off
     {WIDTH / 2 - 100, HEIGHT / 2 - 100, 60, 60, {0, 0, 0}, NULL, 0, -3, OPTIONS_PAGE, []()
      {
          isSoundOn = !isSoundOn;
-         saveOptionsFile();
+         saveOptions();
      },
      false},
 };
 
-// * Background music management functions
-void playBackgroundMusic(MusicType musicType)
+// * Animation functions
+void animateHorizontalMovement()
 {
-    // Stop any currently playing background music
-    if (isBackgroundMusicPlaying)
-    {
-        iStopSound(backgroundMusicChannel);
-        isBackgroundMusicPlaying = false;
-    }
-
-    if (isMusicOn)
-    {
-        const char *musicFile;
-        if (musicType == MENU_MUSIC) // Menu music
-        {
-            musicFile = "assets/sounds/menu_bg.wav";
-            currentMusicType = MENU_MUSIC;
-        }
-        else if (musicType == GAME_MUSIC) // Game music
-        {
-            musicFile = "assets/sounds/game_bg.wav";
-            currentMusicType = GAME_MUSIC;
-        }
-        else
-        {
-            return; // Invalid music type
-        }
-
-        backgroundMusicChannel = iPlaySound(musicFile, true, musicType == MENU_MUSIC ? 50 : 25); // Game music volume is lower than the menu music volume.
-        isBackgroundMusicPlaying = true;
-    }
+    if (player.x < player.animateToX)
+        player.x += X_ANIMATION_DEL_X;
+    else if (player.x > player.animateToX)
+        player.x -= X_ANIMATION_DEL_X;
+    else
+        iPauseTimer(horizontalMovementTimer);
 }
 
-void stopBackgroundMusic()
+void animateSprites()
 {
-    if (isBackgroundMusicPlaying)
-    {
-        iStopSound(backgroundMusicChannel);
-        isBackgroundMusicPlaying = false;
-        currentMusicType = NONE;
-    }
-}
+    iAnimateSprite(&coinSprite);
+    iAnimateSprite(&flagSprite);
 
-void switchBackgroundMusic(MusicType newMusicType)
-{
-    if (currentMusicType != newMusicType)
+    if (player.isJumping)
     {
-        playBackgroundMusic(newMusicType);
+        iAnimateSprite(&playerJumpSprite);
+        jumpAnimationFrame++;
+        if (jumpAnimationFrame >= PLAYER_JUMP_SPRITE_COUNT)
+        {
+            player.isJumping = false;
+            jumpAnimationFrame = 0;
+        }
     }
+    else
+        iAnimateSprite(&playerIdleSprite);
 }
 
 // * Game logic functions
+void jump()
+{
+    if (!player.isOnAir)
+    {
+        if (isSoundOn)
+            iPlaySound("assets/sounds/jump.wav", 0, 35);
+        player.velocityY = JUMP_VELOCITY;
+        player.isJumping = true;
+        jumpAnimationFrame = 0;
+        player.isOnAir = true;
+    }
+}
+
 void moveVerticallyTillCollision(double delY)
 {
     if (player.y + delY < 0) // Collision with the bottom of the screen.
     {
         player.y = 0;
-        velocityY = 0;
-        isOnAir = false;
+        player.velocityY = 0;
+        player.isOnAir = false;
     }
     else if (player.y + player.height + delY > HEIGHT) // Collision with the top of the screen.
     {
         player.y = HEIGHT - player.height;
-        velocityY = 0;
+        player.velocityY = 0;
     }
     else
     {
-        int row = (int)((player.y + delY) / TILE_SIZE);
-        int col = (int)(animateToX / TILE_SIZE);
-        if (doesCollideArray[ROWS - row - 1][col]) // Collision with the tile below the player.
+        int playerRow = (int)((player.y + delY) / TILE_SIZE);
+        int playerCol = (int)(player.animateToX / TILE_SIZE);
+        if (doesCollideArray[ROWS - playerRow - 1][playerCol]) // Collision with the tile below the player.
         {
-            player.y = (row + 1) * TILE_SIZE;
-            velocityY = 0;
-            isOnAir = false;
+            player.y = (playerRow + 1) * TILE_SIZE;
+            player.velocityY = 0;
+            player.isOnAir = false;
         }
-        else if (doesCollideArray[ROWS - row - 2][col]) // Collision with the tile above the player.
+        else if (doesCollideArray[ROWS - playerRow - 2][playerCol]) // Collision with the tile above the player.
         {
-            player.y = row * TILE_SIZE;
-            velocityY = 0;
+            player.y = playerRow * TILE_SIZE;
+            player.velocityY = 0;
         }
         else
         {
@@ -769,119 +907,39 @@ void moveVerticallyTillCollision(double delY)
     }
 }
 
-void checkAndUpdateHighScores()
-{
-    for (int i = 0; i < playerCount; i++)
-    {
-        if (strcmp(playerNames[i], playerName) == 0)
-        {
-            if (starCount > highScores[i][currentLevel - 1][0])
-            {
-                highScores[i][currentLevel - 1][0] = starCount;
-                highScores[i][currentLevel - 1][1] = score;
-                saveHighScoresFile();
-            }
-            else if (starCount == highScores[i][currentLevel - 1][0] && score > highScores[i][currentLevel - 1][1])
-            {
-                highScores[i][currentLevel - 1][1] = score;
-                saveHighScoresFile();
-            }
-            break;
-        }
-    }
-}
-
-void gameStateUpdate()
-{
-    // ? Store these as macros?
-    double delT = 0.08;
-
-    velocityY -= gravity * delT; // Apply gravity
-    double delY = velocityY * delT;
-
-    moveVerticallyTillCollision(delY);
-
-    if (player.x + player.width > WIDTH)
-    {
-        if (lifeCount == 3 && collectedCoinCount == collectableCount(coinArray) && collectedDiamondCount == collectableCount(diamondArray))
-            starCount = 3;
-        else if (lifeCount == 3 || (collectedCoinCount == collectableCount(coinArray) && collectedDiamondCount == collectableCount(diamondArray)))
-            starCount = 2;
-        else
-            starCount = 1;
-
-        checkAndUpdateHighScores();
-
-        sprintf(levelCompletionText, "Level %d", currentLevel);
-        resetGame();
-
-        stopBackgroundMusic();
-        if (isSoundOn)
-            iPlaySound("assets/sounds/level_complete.wav", 0, 80);
-
-        currentPage = WIN_PAGE;
-        isResumable = 0;
-    }
-}
-
-void animateHorizontalMovement()
-{
-    if (player.x < animateToX)
-    {
-        player.x += X_ANIMATION_DEL_X;
-    }
-    else if (player.x > animateToX)
-    {
-        player.x -= X_ANIMATION_DEL_X;
-    }
-    else
-    {
-        iPauseTimer(horizontalMovementTimer);
-    }
-}
-
-void animateSprites()
-{
-    iAnimateSprite(&coinSprite);
-    iAnimateSprite(&flagSprite);
-    // TODO: Recheck the logic.
-    if (velocityY == 0)
-    {
-        // If the player's jump animation is over, but still in air (velocityY != 0), then nothing is animated.
-        iAnimateSprite(&playerIdleSprite);
-    }
-    else if (isJumping)
-    {
-        iAnimateSprite(&playerJumpSprite);
-        jumpAnimationFrame++;
-        if (jumpAnimationFrame >= 5)
-        {
-            isJumping = false;
-            jumpAnimationFrame = 0;
-        }
-    }
-}
-
-int checkIfAlreadyCollected(int row, int col, int collectedCollectableArray[][2], int *collectedCollectableCount)
-{
-    for (int i = 0; i < *collectedCollectableCount; i++)
-    {
-        if (collectedCollectableArray[i][0] == row && collectedCollectableArray[i][1] == col)
-        {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-void checkAndCollect(int collectableArray[ROWS][COLUMNS], int collectableId, int collectableScore, int collectedCollectableArray[][2], int *collectedCollectableCount, int isLife = 0, const char *soundPath = NULL, int volume = 100)
+void checkCollisionWithTraps()
 {
     int row = ROWS - (int)(player.y / TILE_SIZE) - 1;
-    int col = (int)(animateToX / TILE_SIZE);
+    int col = (int)(player.animateToX / TILE_SIZE);
 
-    if (collectableArray[row][col]) // Collision tested rigorously.
+    if (trapArray[row][col] && player.x == player.animateToX)
     {
-        if (!checkIfAlreadyCollected(row, col, collectedCollectableArray, collectedCollectableCount))
+        initializePlayer();
+        lifeCount--;
+
+        if (lifeCount > 0 && isSoundOn)
+            iPlaySound("assets/sounds/hurt.wav", 0, 50);
+        // * Game over condition
+        else if (lifeCount == 0)
+        {
+            resetGame();
+            currentPage = GAME_OVER_PAGE;
+
+            stopBackgroundMusic();
+            if (isSoundOn)
+                iPlaySound("assets/sounds/game_over.wav", 0, 80);
+        }
+    }
+}
+
+void checkAndCollect(bool collectableArray[ROWS][COLUMNS], int collectableId, int collectableScore, int collectedCollectableArray[][2], int *collectedCollectableCount, int isLife = 0, const char *soundPath = NULL, int volume = 100)
+{
+    int row = ROWS - (int)(player.y / TILE_SIZE) - 1;
+    int col = (int)(player.animateToX / TILE_SIZE);
+
+    if (collectableArray[row][col]) // Collision with collectables tested rigorously.
+    {
+        if (!isAlreadyCollected(row, col, collectedCollectableArray, collectedCollectableCount))
         {
             score += collectableScore;
             collectedCollectableArray[*collectedCollectableCount][0] = row;
@@ -896,244 +954,177 @@ void checkAndCollect(int collectableArray[ROWS][COLUMNS], int collectableId, int
     }
 }
 
-void updateAllCollectables()
+void checkCollisionWithAllCollectables()
 {
     checkAndCollect(coinArray, COIN_ID, COIN_SCORE, collectedCoins, &collectedCoinCount, 0, "assets/sounds/coin.wav", 70);
     checkAndCollect(diamondArray, DIAMOND_ID, DIAMOND_SCORE, collectedDiamonds, &collectedDiamondCount, 0, "assets/sounds/diamond.wav", 100);
-    checkAndCollect(lifeArray, FULL_LIFE_ID, 0, collectedLife, &collectedLifeCount, 1, "assets/sounds/life.wav", 70);
+    checkAndCollect(lifeArray, FULL_LIFE_ID, 0, collectedLives, &collectedLifeCount, 1, "assets/sounds/life.wav", 70);
 }
 
-void checkCollisionWithTraps()
+void gameStateUpdate()
 {
-    int row = ROWS - (int)(player.y / TILE_SIZE) - 1;
-    int col = (int)(animateToX / TILE_SIZE);
+    player.velocityY -= GRAVITY * DEL_T;
+    double delY = player.velocityY * DEL_T;
 
-    if (trapArray[row][col] && player.x == animateToX)
+    moveVerticallyTillCollision(delY);
+    checkCollisionWithTraps();
+    checkCollisionWithAllCollectables();
+
+    // * Win condition
+    if (player.x + player.width > WIDTH)
     {
-        // TODO: Add an animation for the trap.
-        // TODO: Check if this is the correct way to reset the player.
-        player.x = PLAYER_INITIAL_X;
-        player.y = PLAYER_INITIAL_Y;
-        animateToX = player.x;
-        velocityY = 0;
-        if (player.direction == LEFT)
-        {
-            iMirrorSprite(&playerIdleSprite, HORIZONTAL);
-            iMirrorSprite(&playerJumpSprite, HORIZONTAL);
-        }
-        player.direction = RIGHT;
-        isJumping = false;
-        jumpAnimationFrame = 0;
-        lifeCount--;
+        if (lifeCount == 3 && collectedCoinCount == collectableCount(coinArray) && collectedDiamondCount == collectableCount(diamondArray))
+            starCount = 3;
+        else if (lifeCount == 3 || (collectedCoinCount == collectableCount(coinArray) && collectedDiamondCount == collectableCount(diamondArray)))
+            starCount = 2;
+        else
+            starCount = 1;
 
-        if (lifeCount > 0 && isSoundOn)
-            iPlaySound("assets/sounds/hurt.wav", 0, 50);
+        checkAndUpdateHighScores();
 
-        if (lifeCount == 0)
-        {
-            resetGame();
-            stopBackgroundMusic();
-            if (isSoundOn)
-                iPlaySound("assets/sounds/game_over.wav", 0, 80);
-            currentPage = GAME_OVER_PAGE;
-        }
+        resetGame();
+        currentPage = WIN_PAGE;
+
+        stopBackgroundMusic();
+        if (isSoundOn)
+            iPlaySound("assets/sounds/level_complete.wav", 0, 80);
     }
 }
 
 void iDraw()
 {
-    if (isFirstDraw)
+    switch (currentPage)
     {
-        loadAssets();
-        loadLevel(currentLevel);
-    }
-
-    iClear();
-
-    // Draw background
-    iSetColor(255, 255, 255);
-    iShowLoadedImage(0, 0, &background_image);
-
-    // Draw tiles and coins
-    drawTiles();
-
-    // Player
-    // iFilledRectangle(player.x, player.y, player.width, player.height);
-    if (velocityY > 0)
-    {
-        iSetSpritePosition(&playerJumpSprite, player.x, player.y);
-        iShowSprite(&playerJumpSprite);
-    }
-    else
-    {
-        iSetSpritePosition(&playerIdleSprite, player.x, player.y);
-        iShowSprite(&playerIdleSprite);
-    }
-
-    updateAllCollectables();
-    checkCollisionWithTraps();
-
-    drawScore();
-    drawLifeCount();
-
-    // * Page rendering
-    if (currentPage == MENU_PAGE)
-    {
-        drawMenuPage();
-    }
-    else if (currentPage == GAME_PAGE)
-    {
-        // TODO: Don't resume every time iDraw() is called.
-        iResumeTimer(gameStateUpdateTimer);
-        iResumeTimer(spriteAnimationTimer);
-        isResumable = 1;
-    }
-    else if (currentPage == LEVELS_PAGE)
-    {
-        drawLevelsPage();
-    }
-    else if (currentPage == HIGH_SCORES_PAGE)
-    {
-        drawHighScoresPage();
-    }
-    else if (currentPage == OPTIONS_PAGE)
-    {
-        drawOptionsPage();
-    }
-    else if (currentPage == GAME_OVER_PAGE)
-    {
-        drawGameOverPage();
-    }
-    else if (currentPage == WIN_PAGE)
-    {
-        drawWinPage();
-    }
-    else if (currentPage == HELP_PAGE)
-    {
-        drawHelpPage();
-    }
-    else if (currentPage == CREDITS_PAGE)
-    {
-        drawCreditsPage();
-    }
-    else if (currentPage == NAME_INPUT_PAGE)
-    {
+    case NAME_INPUT_PAGE:
         drawNameInputPage();
+        break;
+    case MENU_PAGE:
+        drawMenuPage();
+        break;
+    case LEVELS_PAGE:
+        drawLevelsPage();
+        break;
+    case HIGH_SCORES_PAGE:
+        drawHighScoresPage();
+        break;
+    case OPTIONS_PAGE:
+        drawOptionsPage();
+        break;
+    case HELP_PAGE:
+        drawHelpPage();
+        break;
+    case CREDITS_PAGE:
+        drawCreditsPage();
+        break;
+    case GAME_PAGE:
+        drawGamePage();
+        break;
+    case WIN_PAGE:
+        drawWinPage();
+        break;
+    case GAME_OVER_PAGE:
+        drawGameOverPage();
+        break;
     }
-
-    isFirstDraw = false;
 }
 
 // * UI Widget: Small widget function definitions
 void drawScore()
 {
-    iSetColor(0, 0, 0);
     if (currentPage == GAME_PAGE)
-    {
         sprintf(scoreText, "Score: %d", score);
-    }
-    iShowText(30, HEIGHT - 60, scoreText, "assets/fonts/minecraft_ten.ttf", 48);
+
+    iSetColor(0, 0, 0);
+    iShowText(30, HEIGHT - 60, scoreText, FONT_PATH, 48);
 }
 
 void drawLifeCount()
 {
-    iShowLoadedImage(WIDTH - 80, HEIGHT - 72, &lifeImages[lifeCount > 0 ? 1 : 0]);
-    iShowLoadedImage(WIDTH - 135, HEIGHT - 72, &lifeImages[lifeCount > 1 ? 1 : 0]);
-    iShowLoadedImage(WIDTH - 190, HEIGHT - 72, &lifeImages[lifeCount > 2 ? 1 : 0]);
+    iShowLoadedImage(WIDTH - 190, HEIGHT - 72, lifeCount > 2 ? &fullLifeImage : &noLifeImage); // Leftmost life
+    iShowLoadedImage(WIDTH - 135, HEIGHT - 72, lifeCount > 1 ? &fullLifeImage : &noLifeImage); // Middle life
+    iShowLoadedImage(WIDTH - 80, HEIGHT - 72, lifeCount > 0 ? &fullLifeImage : &noLifeImage);  // Rightmost life
 }
 
 void drawTiles()
 {
-    for (int layer = 0; layer < layerCount[currentLevel - 1]; layer++)
+    for (int layer = 0; layer < layerCount; layer++)
     {
         for (int row = 0; row < ROWS; row++)
         {
             for (int col = 0; col < COLUMNS; col++)
             {
-                if (tiles[layer][row][col][0] != -1)
+                switch (tiles[layer][row][col][0])
                 {
-                    if (tiles[layer][row][col][0] == FLAG_ID)
-                    {
-                        drawTile(layer, row, col, &flagSprite);
-                    }
-                    else if (tiles[layer][row][col][0] == COIN_ID)
-                    {
-                        if (!checkIfAlreadyCollected(row, col, collectedCoins, &collectedCoinCount))
-                            drawTile(layer, row, col, &coinSprite);
-                    }
-                    else if (tiles[layer][row][col][0] == DIAMOND_ID)
-                    {
-                        if (!checkIfAlreadyCollected(row, col, collectedDiamonds, &collectedDiamondCount))
-                            drawTile(layer, row, col);
-                    }
-                    else if (tiles[layer][row][col][0] == FULL_LIFE_ID)
-                    {
-                        if (!checkIfAlreadyCollected(row, col, collectedLife, &collectedLifeCount))
-                            drawTile(layer, row, col);
-                    }
-                    else
-                    {
+                case -1: // Empty tile
+                    break;
+                case FLAG_ID:
+                    drawTile(layer, row, col, &flagSprite);
+                    break;
+                case COIN_ID:
+                    if (!isAlreadyCollected(row, col, collectedCoins, &collectedCoinCount))
+                        drawTile(layer, row, col, &coinSprite);
+                    break;
+                case DIAMOND_ID:
+                    if (!isAlreadyCollected(row, col, collectedDiamonds, &collectedDiamondCount))
                         drawTile(layer, row, col);
-                    }
+                    break;
+                case FULL_LIFE_ID:
+                    if (!isAlreadyCollected(row, col, collectedLives, &collectedLifeCount))
+                        drawTile(layer, row, col);
+                    break;
+                default:
+                    drawTile(layer, row, col);
+                    break;
                 }
             }
         }
     }
 }
 
-void mirrorTile(int tileId, MirrorState mirrorState, Sprite *sprite = NULL)
-{
-    if (sprite == NULL)
-        iMirrorImage(&tileImages[tileId], mirrorState);
-    else
-        iMirrorSprite(sprite, mirrorState);
-}
-
 void drawTile(int layer, int row, int col, Sprite *sprite)
 {
     int tileId = tiles[layer][row][col][0];
-    int flipH = tiles[layer][row][col][1];
-    int flipV = tiles[layer][row][col][2];
+    bool isFlippedHorizontally = tiles[layer][row][col][1];
+    bool isFlippedVertically = tiles[layer][row][col][2];
     int x = col * TILE_SIZE;
     int y = (ROWS - row - 1) * TILE_SIZE;
-    if (flipH)
+
+    if (isFlippedHorizontally)
         mirrorTile(tileId, HORIZONTAL, sprite);
-    if (flipV)
+    if (isFlippedVertically)
         mirrorTile(tileId, VERTICAL, sprite);
+
     if (sprite == NULL)
-    {
         iShowLoadedImage(x, y, &tileImages[tileId]);
-    }
     else
     {
         iSetSpritePosition(sprite, x, y);
         iShowSprite(sprite);
     }
+
     // Mirror the tile back to its original state.
-    if (flipH)
+    if (isFlippedHorizontally)
         mirrorTile(tileId, HORIZONTAL, sprite);
-    if (flipV)
+    if (isFlippedVertically)
         mirrorTile(tileId, VERTICAL, sprite);
 }
 
-void drawButton(Button &button)
+void drawTextButton(TextButton &button)
 {
     float alpha;
-    bool isHovering = mouseX >= button.x && mouseX <= button.x + button.width && mouseY >= button.y && mouseY <= button.y + button.height;
+    bool isBeingHovered = mouseX >= button.x && mouseX <= button.x + button.width && mouseY >= button.y && mouseY <= button.y + button.height;
 
-    if (isHovering)
+    if (isBeingHovered)
     {
         alpha = 0.7; // Hover effect
-        if (!button.isHovered && isSoundOn)
-        {
+        if (!button.hasBeenHovered && isSoundOn)
             iPlaySound("assets/sounds/menu_hover.wav", 0, 5);
-        }
-        button.isHovered = true;
+        button.hasBeenHovered = true;
     }
     else
     {
         alpha = 0.9;
-        button.isHovered = false;
+        button.hasBeenHovered = false;
     }
 
     iSetTransparentColor(button.bgColor.red, button.bgColor.green, button.bgColor.blue, alpha);
@@ -1144,30 +1135,28 @@ void drawButton(Button &button)
     int textWidth = (int)(textLen * button.fontSize * 0.6);
     int textHeight = button.fontSize * 0.82;
     int textX = button.x + (button.width - textWidth) / 2 + button.xOffset;
-    int textY = button.y + (button.height - textHeight) / 2;
+    int textY = button.y + (button.height - textHeight) / 2 + button.yOffset;
 
     iSetColor(button.textColor.red, button.textColor.green, button.textColor.blue);
-    iShowText(textX, textY, button.text, "assets/fonts/minecraft_ten.ttf", button.fontSize);
+    iShowText(textX, textY, button.text, FONT_PATH, button.fontSize);
 }
 
-void drawIcon(Icon &icon)
+void drawIconButton(IconButton &icon)
 {
     float alpha;
-    bool isHovering = mouseX >= icon.x && mouseX <= icon.x + icon.width && mouseY >= icon.y && mouseY <= icon.y + icon.height;
+    bool isBeingHovered = mouseX >= icon.x && mouseX <= icon.x + icon.width && mouseY >= icon.y && mouseY <= icon.y + icon.height;
 
-    if (isHovering)
+    if (isBeingHovered)
     {
         alpha = 0.7; // Hover effect
-        if (!icon.isHovered && isSoundOn)
-        {
+        if (!icon.hasBeenHovered && isSoundOn)
             iPlaySound("assets/sounds/menu_hover.wav", 0, 5);
-        }
-        icon.isHovered = true;
+        icon.hasBeenHovered = true;
     }
     else
     {
         alpha = 0.9;
-        icon.isHovered = false;
+        icon.hasBeenHovered = false;
     }
 
     iSetTransparentColor(icon.bgColor.red, icon.bgColor.green, icon.bgColor.blue, alpha);
@@ -1178,19 +1167,23 @@ void drawIcon(Icon &icon)
 void drawNameInputPage()
 {
     iClear();
-    iShowLoadedImage(0, 0, &background_image);
+    iShowLoadedImage(0, 0, &backgroundImage);
 
     iSetColor(0, 0, 0);
-    iShowText(WIDTH / 2 - 320, HEIGHT / 2 + 100, "Enter your name", "assets/fonts/minecraft_ten.ttf", 80);
-    iShowText(WIDTH / 2 - 315, HEIGHT / 2, playerNameInput, "assets/fonts/minecraft_ten.ttf", 36);
+
+    iShowText(WIDTH / 2 - 320, HEIGHT / 2 + 100, "Enter your name", FONT_PATH, 80);
+
+    // Text field
+    iShowText(WIDTH / 2 - 315, HEIGHT / 2, playerNameInput, FONT_PATH, 36);
     iFilledRectangle(WIDTH / 2 - 315, HEIGHT / 2 - 26, 660, 4);
-    iShowText(WIDTH / 2 - 180, 48, "Press Enter to continue", "assets/fonts/minecraft_ten.ttf", 30);
+
+    iShowText(WIDTH / 2 - 180, 48, "Press Enter to continue", FONT_PATH, 30);
 
     if (strlen(playerName) > 0)
     {
         // Back button
-        buttons[17].page = NAME_INPUT_PAGE;
-        drawButton(buttons[17]);
+        buttons[18].page = NAME_INPUT_PAGE;
+        drawTextButton(buttons[18]);
     }
 }
 
@@ -1198,217 +1191,229 @@ void drawNameInputPage()
 void drawMenuPage()
 {
     iClear();
-    iShowLoadedImage(0, 0, &background_image);
+    iShowLoadedImage(0, 0, &backgroundImage);
 
     iSetColor(0, 0, 0);
 
+    // Player name
     char playerNameText[80];
     sprintf(playerNameText, "Player: %s", playerName);
-    iShowText(40, HEIGHT - 60, playerNameText, "assets/fonts/minecraft_ten.ttf", 36);
+    iShowText(40, HEIGHT - 60, playerNameText, FONT_PATH, 36);
 
-    iShowText(40, 170, "RETRO", "assets/fonts/minecraft_ten.ttf", 167);
-    iShowText(40, 40, "RACCOON", "assets/fonts/minecraft_ten.ttf", 120);
+    // Logo
+    iShowText(40, 170, "RETRO", FONT_PATH, 167);
+    iShowText(40, 40, "RACCOON", FONT_PATH, 120);
 
+    // Menu buttons
     for (int i = 0; i < 7; i++)
     {
         if (i == 0 && !isResumable)
-        {
             continue;
-        }
-        drawButton(buttons[i]);
+        drawTextButton(buttons[i]);
     }
 }
 
 void drawLevelsPage()
 {
     iClear();
-    iShowLoadedImage(0, 0, &background_image);
+    iShowLoadedImage(0, 0, &backgroundImage);
 
     iSetColor(0, 0, 0);
-    iShowText(WIDTH / 2 - 120, HEIGHT - 100, "Levels", "assets/fonts/minecraft_ten.ttf", 80);
+    iShowText(WIDTH / 2 - 120, HEIGHT - 100, "Levels", FONT_PATH, 80);
 
+    // Level buttons
     for (int i = 7; i < 12; i++)
     {
-        drawButton(buttons[i]);
+        drawTextButton(buttons[i]);
     }
 
     // Back button
-    buttons[17].page = LEVELS_PAGE;
-    drawButton(buttons[17]);
+    buttons[18].page = LEVELS_PAGE;
+    drawTextButton(buttons[18]);
 }
 
 void drawHighScoresPage()
 {
     iClear();
-    iShowLoadedImage(0, 0, &background_image);
+    iShowLoadedImage(0, 0, &backgroundImage);
 
     iSetColor(0, 0, 0);
-    iShowText(WIDTH / 2 - 210, HEIGHT - 100, "High Scores", "assets/fonts/minecraft_ten.ttf", 80);
+    iShowText(WIDTH / 2 - 210, HEIGHT - 100, "High Scores", FONT_PATH, 80);
 
-    for (int i = 0; i < 5; i++)
+    // Table header row
+    for (int i = 0; i < LEVEL_COUNT; i++)
     {
-        char levelText[80];
+        char levelText[50];
         sprintf(levelText, "Level %d", i + 1);
-        iShowText(500 + i * 150, HEIGHT - 200, levelText, "assets/fonts/minecraft_ten.ttf", 30);
+        iShowText(500 + i * 150, HEIGHT - 200, levelText, FONT_PATH, 30);
     }
 
+    // Table body
     for (int i = 0; i < playerCount; i++)
     {
-        iShowText(60, HEIGHT - 250 - i * 50, playerNames[i], "assets/fonts/minecraft_ten.ttf", 30);
-        for (int j = 0; j < 5; j++)
+        // Each row of the table
+        iShowText(60, HEIGHT - 250 - i * 50, playerNames[i], FONT_PATH, 30);
+        for (int j = 0; j < LEVEL_COUNT; j++)
         {
-            char scoreText[80];
+            char scoreText[50];
             if (highScores[i][j][0] == 0)
-            {
-                sprintf(scoreText, "N/A");
-            }
+                sprintf(scoreText, "N/A"); // Player has not played this level yet.
             else
-            {
-                sprintf(scoreText, "%d, %d", highScores[i][j][0], highScores[i][j][1]);
-            }
-            iShowText(500 + j * 150, HEIGHT - 250 - i * 50, scoreText, "assets/fonts/minecraft_ten.ttf", 28);
+                sprintf(scoreText, "%d - %d", highScores[i][j][0], highScores[i][j][1]);
+            iShowText(500 + j * 150, HEIGHT - 250 - i * 50, scoreText, FONT_PATH, 28);
         }
     }
 
     // Back button
-    buttons[17].page = HIGH_SCORES_PAGE;
-    drawButton(buttons[17]);
+    buttons[18].page = HIGH_SCORES_PAGE;
+    drawTextButton(buttons[18]);
 }
 
 void drawOptionsPage()
 {
     iClear();
-    iShowLoadedImage(0, 0, &background_image);
+    iShowLoadedImage(0, 0, &backgroundImage);
 
     iSetColor(0, 0, 0);
-    iShowText(WIDTH / 2 - 140, HEIGHT - 100, "Options", "assets/fonts/minecraft_ten.ttf", 80);
+    iShowText(WIDTH / 2 - 140, HEIGHT - 100, "Options", FONT_PATH, 80);
 
     // Music off/on
-    // drawIcon(WIDTH / 2 - 100, HEIGHT / 2, isMusicOn ? &audioOnImage : &audioOffImage, false, 0, -3);
     icons[0].image = isMusicOn ? &audioOnImage : &audioOffImage;
-    drawIcon(icons[0]);
-    iShowText(WIDTH / 2 - 20, HEIGHT / 2 + 8, "Music", "assets/fonts/minecraft_ten.ttf", 60);
+    drawIconButton(icons[0]);
+    iShowText(WIDTH / 2 - 20, HEIGHT / 2 + 8, "Music", FONT_PATH, 60);
 
     // Sound off/on
     icons[1].image = isSoundOn ? &audioOnImage : &audioOffImage;
-    drawIcon(icons[1]);
-    iShowText(WIDTH / 2 - 20, HEIGHT / 2 - 92, "Sound", "assets/fonts/minecraft_ten.ttf", 60);
+    drawIconButton(icons[1]);
+    iShowText(WIDTH / 2 - 20, HEIGHT / 2 - 92, "Sound", FONT_PATH, 60);
 
-    // Edit Player Name button
-    drawButton(buttons[18]);
+    // Edit Name button
+    drawTextButton(buttons[17]);
 
     // Back button
-    buttons[17].page = OPTIONS_PAGE;
-    drawButton(buttons[17]);
+    buttons[18].page = OPTIONS_PAGE;
+    drawTextButton(buttons[18]);
 }
 
 void drawHelpPage()
 {
     iClear();
-    iShowLoadedImage(0, 0, &background_image);
+    iShowLoadedImage(0, 0, &backgroundImage);
 
     iSetColor(0, 0, 0);
-    iShowText(WIDTH / 2 - 100, HEIGHT - 100, "Help", "assets/fonts/minecraft_ten.ttf", 80);
+    iShowText(WIDTH / 2 - 100, HEIGHT - 100, "Help", FONT_PATH, 80);
 
     // Section 1: Controls
-    iShowText(80, HEIGHT - 200, "Controls", "assets/fonts/minecraft_ten.ttf", 60);
-    iShowText(80, HEIGHT - 250, "Left and Right Arrow - Move", "assets/fonts/minecraft_ten.ttf", 30);
-    iShowText(80, HEIGHT - 300, "Up Arrow - Jump", "assets/fonts/minecraft_ten.ttf", 30);
-    iShowText(80, HEIGHT - 350, "Esc - Pause", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(80, HEIGHT - 200, "Controls", FONT_PATH, 60);
+    iShowText(80, HEIGHT - 250, "Left and Right Arrow - Move", FONT_PATH, 30);
+    iShowText(80, HEIGHT - 300, "Up Arrow or Space - Jump", FONT_PATH, 30);
+    iShowText(80, HEIGHT - 350, "Esc - Pause", FONT_PATH, 30);
 
     // Section 2: Objectives
-    iShowText(80, HEIGHT - 450, "Objective", "assets/fonts/minecraft_ten.ttf", 60);
-    iShowText(80, HEIGHT - 500, "Reach the flag on the right", "assets/fonts/minecraft_ten.ttf", 30);
-    iShowText(80, HEIGHT - 550, "Avoid traps", "assets/fonts/minecraft_ten.ttf", 30);
-    iShowText(80, HEIGHT - 600, "Collect coins and diamonds", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(80, HEIGHT - 450, "Objective", FONT_PATH, 60);
+    iShowText(80, HEIGHT - 500, "Reach the flag on the right", FONT_PATH, 30);
+    iShowText(80, HEIGHT - 550, "Avoid traps", FONT_PATH, 30);
+    iShowText(80, HEIGHT - 600, "Collect coins and diamonds", FONT_PATH, 30);
 
     // Section 3: Scoring
-    iShowText(600, HEIGHT - 200, "Scoring", "assets/fonts/minecraft_ten.ttf", 60);
-    iShowText(600, HEIGHT - 250, "Coin - 10 points", "assets/fonts/minecraft_ten.ttf", 30);
-    iShowText(600, HEIGHT - 300, "Diamond - 50 points", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(600, HEIGHT - 200, "Scoring", FONT_PATH, 60);
+    iShowText(600, HEIGHT - 250, "Coin - 10 points", FONT_PATH, 30);
+    iShowText(600, HEIGHT - 300, "Diamond - 50 points", FONT_PATH, 30);
 
     // Section 4: Stars
-    iShowText(600, HEIGHT - 400, "Stars", "assets/fonts/minecraft_ten.ttf", 60);
-    iShowText(600, HEIGHT - 450, "3 Stars - 3 lives + all coins & diamonds", "assets/fonts/minecraft_ten.ttf", 30);
-    iShowText(600, HEIGHT - 500, "2 Stars - 3 lives or all coins & diamonds", "assets/fonts/minecraft_ten.ttf", 30);
-    iShowText(600, HEIGHT - 550, "1 Star - Finished, but missed both", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(600, HEIGHT - 400, "Stars", FONT_PATH, 60);
+    iShowText(600, HEIGHT - 450, "3 Stars - 3 lives + all coins & diamonds", FONT_PATH, 30);
+    iShowText(600, HEIGHT - 500, "2 Stars - 3 lives or all coins & diamonds", FONT_PATH, 30);
+    iShowText(600, HEIGHT - 550, "1 Star - Finished, but missed both", FONT_PATH, 30);
 
     // Back button
-    buttons[17].page = HELP_PAGE;
-    drawButton(buttons[17]);
+    buttons[18].page = HELP_PAGE;
+    drawTextButton(buttons[18]);
 }
 
 void drawCreditsPage()
 {
     iClear();
-    iShowLoadedImage(0, 0, &background_image);
+    iShowLoadedImage(0, 0, &backgroundImage);
 
     iSetColor(0, 0, 0);
-    iShowText(WIDTH / 2 - 130, HEIGHT - 100, "Credits", "assets/fonts/minecraft_ten.ttf", 80);
+    iShowText(WIDTH / 2 - 130, HEIGHT - 100, "Credits", FONT_PATH, 80);
 
     // Section 1: Contributors
-    iShowText(80, HEIGHT - 200, "Contributors", "assets/fonts/minecraft_ten.ttf", 60);
-    iShowText(80, HEIGHT - 250, "2405102 - Arif Awasaf Wriddho", "assets/fonts/minecraft_ten.ttf", 30);
-    iShowText(80, HEIGHT - 300, "2405103 - Kazi Md. Raiyan", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(80, HEIGHT - 200, "Contributors", FONT_PATH, 60);
+    iShowText(80, HEIGHT - 250, "2405102 - Arif Awasaf Wriddho", FONT_PATH, 30);
+    iShowText(80, HEIGHT - 300, "2405103 - Kazi Md. Raiyan", FONT_PATH, 30);
 
     // Section 2: Tools
-    iShowText(80, HEIGHT - 400, "Tools", "assets/fonts/minecraft_ten.ttf", 60);
-    iShowText(80, HEIGHT - 450, "Modern iGraphics v0.4.0 by Mahir Labib Dihan", "assets/fonts/minecraft_ten.ttf", 30);
-    iShowText(80, HEIGHT - 500, "Tiled - for level design", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(80, HEIGHT - 400, "Tools", FONT_PATH, 60);
+    iShowText(80, HEIGHT - 450, "Modern iGraphics v0.4.0 by Mahir Labib Dihan", FONT_PATH, 30);
+    iShowText(80, HEIGHT - 500, "Tiled - for level design", FONT_PATH, 30);
 
     // Section 3: Assets
-    iShowText(80, HEIGHT - 600, "Assets", "assets/fonts/minecraft_ten.ttf", 60);
-    iShowText(80, HEIGHT - 650, "Pixel Platformer by Kenney", "assets/fonts/minecraft_ten.ttf", 30);
+    iShowText(80, HEIGHT - 600, "Assets", FONT_PATH, 60);
+    iShowText(80, HEIGHT - 650, "Pixel Platformer by Kenney", FONT_PATH, 30);
+
+    // Section 4: Supervisor
+    iShowText(700, HEIGHT - 200, "Supervisor", FONT_PATH, 60);
+    iShowText(700, HEIGHT - 250, "Sumaiya Sultana (SSA)", FONT_PATH, 30);
 
     // Back button
-    buttons[17].page = CREDITS_PAGE;
-    drawButton(buttons[17]);
+    buttons[18].page = CREDITS_PAGE;
+    drawTextButton(buttons[18]);
 }
 
-void drawGameOverPage()
+void drawGamePage()
 {
     iClear();
+    iShowLoadedImage(0, 0, &backgroundImage);
 
-    iShowLoadedImage(0, 0, &background_image);
+    drawTiles();
 
-    iSetColor(0, 0, 0);
-    iShowText(WIDTH / 2 - 245, HEIGHT / 2 + 100, "Game Over", "assets/fonts/minecraft_ten.ttf", 100);
-    iShowText(WIDTH / 2 - 126, HEIGHT / 2, scoreText, "assets/fonts/minecraft_ten.ttf", 60);
+    // Draw player
+    if (player.velocityY > 0)
+    {
+        iSetSpritePosition(&playerJumpSprite, player.x, player.y);
+        iShowSprite(&playerJumpSprite);
+    }
+    else
+    {
+        iSetSpritePosition(&playerIdleSprite, player.x, player.y);
+        iShowSprite(&playerIdleSprite);
+    }
 
-    // Main Menu and Try Again buttons
-    drawButton(buttons[12]);
-    drawButton(buttons[13]);
+    drawScore();
+    drawLifeCount();
 }
 
 void drawWinPage()
 {
     iClear();
+    iShowLoadedImage(0, 0, &backgroundImage);
 
-    iShowLoadedImage(0, 0, &background_image);
+    char levelText[50];
+    sprintf(levelText, "Level %d", currentLevel);
 
     iSetColor(0, 0, 0);
-    iShowText(WIDTH / 2 - 140, HEIGHT - 120, levelCompletionText, "assets/fonts/minecraft_ten.ttf", 80);
-    iShowText(WIDTH / 2 - 130, HEIGHT / 2 - 70, scoreText, "assets/fonts/minecraft_ten.ttf", 60);
+    iShowText(WIDTH / 2 - 140, HEIGHT - 120, levelText, FONT_PATH, 80);
+    iShowText(WIDTH / 2 - 130, HEIGHT / 2 - 70, scoreText, FONT_PATH, 60);
 
-    // 3 stars
+    // Stars
     iShowLoadedImage(WIDTH / 2 - 240, HEIGHT / 2 + 50, &yellowStarImage);
     iShowLoadedImage(WIDTH / 2 - 60, HEIGHT / 2 + 50, starCount > 1 ? &yellowStarImage : &whiteStarImage);
     iShowLoadedImage(WIDTH / 2 + 120, HEIGHT / 2 + 50, starCount > 2 ? &yellowStarImage : &whiteStarImage);
 
     // Main Menu and Play Again buttons
-    drawButton(buttons[14]);
-    drawButton(buttons[15]);
+    drawTextButton(buttons[14]);
+    drawTextButton(buttons[15]);
+
     // Next Level or Exit button
     if (currentLevel < LEVEL_COUNT)
     {
         buttons[16].text = "NEXT LEVEL";
         buttons[16].onClick = []()
         {
-            currentPage = GAME_PAGE;
             changeLevel(currentLevel + 1);
-            switchBackgroundMusic(GAME_MUSIC);
         };
-        drawButton(buttons[16]);
     }
     else
     {
@@ -1417,22 +1422,37 @@ void drawWinPage()
         {
             iCloseWindow();
         };
-        drawButton(buttons[16]);
     }
+    drawTextButton(buttons[16]);
+}
+
+void drawGameOverPage()
+{
+    iClear();
+    iShowLoadedImage(0, 0, &backgroundImage);
+
+    iSetColor(0, 0, 0);
+    iShowText(WIDTH / 2 - 245, HEIGHT / 2 + 100, "Game Over", FONT_PATH, 100);
+    iShowText(WIDTH / 2 - 126, HEIGHT / 2, scoreText, FONT_PATH, 60);
+
+    // Main Menu and Try Again buttons
+    drawTextButton(buttons[12]);
+    drawTextButton(buttons[13]);
 }
 
 // * Keyboard functions
 void iKeyboard(unsigned char key, int state)
 {
-    // TODO: Add enter key handling to go to the hovered page when in the menu page. Also selecting / hovering buttons by the Up and Down arrow keys.
+    // TODO: Add enter key handling to go to the hovered page when in the menu page. Also, selecting buttons by the Up and Down arrow keys.
     switch (key)
     {
-    case 27: // Escape key
-        if (currentPage == NAME_INPUT_PAGE && strlen(playerName) == 0)
-            return;
-        currentPage = MENU_PAGE;
-        iPauseTimer(gameStateUpdateTimer);
-        switchBackgroundMusic(MENU_MUSIC);
+    case 27:                                                              // Escape key
+        if (!(currentPage == NAME_INPUT_PAGE && strlen(playerName) == 0)) // No going back from the name input page when there is no player name.
+            pauseGame();
+        break;
+    case ' ': // Space key
+        if (currentPage == GAME_PAGE)
+            jump();
         break;
     default:
         break;
@@ -1452,26 +1472,20 @@ void iKeyboard(unsigned char key, int state)
             currentPage = MENU_PAGE;
             toLowerString(playerNameInput);
             strcpy(playerName, playerNameInput);
-            bool isNewPlayer = true;
-            for (int i = 0; i < playerCount; i++)
+
+            if (isNewPlayer())
             {
-                if (strcmp(playerNames[i], playerName) == 0)
-                {
-                    isNewPlayer = false;
-                    break;
-                }
-            }
-            if (isNewPlayer)
-            {
+                resetGame();
+                strcpy(playerNames[playerCount], playerName);
                 playerCount++;
-                strcpy(playerNames[playerCount - 1], playerName);
-                saveHighScoresFile();
+                saveHighScores();
             }
+
             FILE *playerNameFile = fopen("saves/current_player.txt", "w");
             fprintf(playerNameFile, "%s", playerNameInput);
             fclose(playerNameFile);
         }
-        else if (key >= 32 && key <= 126 && len < 50)
+        else if (key >= 32 && key <= 126 && len < MAX_PLAYER_NAME_LENGTH)
         {
             playerNameInput[len] = key;
             playerNameInput[len + 1] = '\0';
@@ -1482,32 +1496,20 @@ void iKeyboard(unsigned char key, int state)
 // GLUT_KEY_F1, GLUT_KEY_F2, GLUT_KEY_F3, GLUT_KEY_F4, GLUT_KEY_F5, GLUT_KEY_F6, GLUT_KEY_F7, GLUT_KEY_F8, GLUT_KEY_F9, GLUT_KEY_F10, GLUT_KEY_F11, GLUT_KEY_F12, GLUT_KEY_LEFT, GLUT_KEY_UP, GLUT_KEY_RIGHT, GLUT_KEY_DOWN, GLUT_KEY_PAGE_UP, GLUT_KEY_PAGE_DOWN, GLUT_KEY_HOME, GLUT_KEY_END, GLUT_KEY_INSERT
 void iSpecialKeyboard(unsigned char key, int state)
 {
-    // TODO: Extract functions?
     if (currentPage != GAME_PAGE)
-    {
         return;
-    }
+
     switch (key)
     {
     case GLUT_KEY_UP:
-    {
-        if (!isOnAir)
-        {
-            if (isSoundOn)
-                iPlaySound("assets/sounds/jump.wav", 0, 50);
-            velocityY = 150;
-            isJumping = true;
-            jumpAnimationFrame = 0;
-            isOnAir = true;
-        }
+        jump();
         break;
-    }
+    // TODO: Extract function
     case GLUT_KEY_LEFT:
-    {
-        if (state == GLUT_DOWN && !doesCollideArray[ROWS - (int)(player.y / TILE_SIZE) - 1][(player.x / TILE_SIZE) - 1] && animateToX >= TILE_SIZE)
+        if (state == GLUT_DOWN && !doesCollideArray[ROWS - (int)(player.y / TILE_SIZE) - 1][(player.x / TILE_SIZE) - 1] && player.animateToX >= TILE_SIZE)
         {
+            player.animateToX -= TILE_SIZE;
             iResumeTimer(horizontalMovementTimer);
-            animateToX -= TILE_SIZE;
         }
         if (player.direction == RIGHT)
         {
@@ -1516,14 +1518,11 @@ void iSpecialKeyboard(unsigned char key, int state)
             player.direction = LEFT;
         }
         break;
-    }
     case GLUT_KEY_RIGHT:
-    {
-        // setHorizontalVelocity(80);
         if (state == GLUT_DOWN && !doesCollideArray[ROWS - (int)(player.y / TILE_SIZE) - 1][(player.x / TILE_SIZE) + 1])
         {
+            player.animateToX += TILE_SIZE;
             iResumeTimer(horizontalMovementTimer);
-            animateToX += TILE_SIZE;
         }
         if (player.direction == LEFT)
         {
@@ -1532,7 +1531,6 @@ void iSpecialKeyboard(unsigned char key, int state)
             player.direction = RIGHT;
         }
         break;
-    }
     default:
         break;
     }
@@ -1541,11 +1539,11 @@ void iSpecialKeyboard(unsigned char key, int state)
 // * Mouse functions
 void iMouse(int button, int state, int mx, int my)
 {
-    // TODO: Add click effect?
+    // TODO: Add click effect
     // Button click handling
     if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN)
     {
-        for (int i = 0; i < 19; i++) // TODO: Extract button count to a variable.
+        for (int i = 0; i < BUTTON_COUNT; i++)
         {
             if (buttons[i].page == currentPage && mx >= buttons[i].x && mx <= buttons[i].x + buttons[i].width && my >= buttons[i].y && my <= buttons[i].y + buttons[i].height)
             {
@@ -1558,10 +1556,12 @@ void iMouse(int button, int state, int mx, int my)
                 buttons[i].onClick();
             }
         }
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < ICON_COUNT; i++)
         {
             if (icons[i].page == currentPage && mx >= icons[i].x && mx <= icons[i].x + icons[i].width && my >= icons[i].y && my <= icons[i].y + icons[i].height)
             {
+                if (isSoundOn)
+                    iPlaySound("assets/sounds/menu_click.wav", 0, 30);
                 icons[i].onClick();
             }
         }
@@ -1586,28 +1586,21 @@ void iMouseDrag(int mx, int my)
 
 int main(int argc, char *argv[])
 {
-    parseHighScoresFile();
+    initializePlayer();
+    initializeCollectedCollectables(collectedCoins);
+    initializeCollectedCollectables(collectedDiamonds);
+    initializeCollectedCollectables(collectedLives);
 
-    // Load the current player name.
-    FILE *playerNameFile = fopen("saves/current_player.txt", "r");
-    if (playerNameFile != NULL)
-    {
-        fscanf(playerNameFile, "%s", playerName);
-        toLowerString(playerName);
-        fclose(playerNameFile);
-    }
+    loadAssets();
+    loadLevel(currentLevel);
+    loadPlayerName();
+    loadHighScores();
+    loadOptions();
+
     if (strlen(playerName) == 0)
         currentPage = NAME_INPUT_PAGE;
     else
         currentPage = MENU_PAGE;
-    
-    // Load the options.
-    FILE *optionsFile = fopen("saves/options.txt", "r");
-    if (optionsFile != NULL)
-    {
-        fscanf(optionsFile, "%d %d", &isMusicOn, &isSoundOn);
-        fclose(optionsFile);
-    }
 
     glutInit(&argc, argv); // argc and argv are used for command line arguments.
 
@@ -1617,6 +1610,10 @@ int main(int argc, char *argv[])
     iPauseTimer(gameStateUpdateTimer);
     iPauseTimer(horizontalMovementTimer);
     iPauseTimer(spriteAnimationTimer);
+
+    iInitializeFont();
+    iInitializeSound();
+    playBackgroundMusic(MENU_MUSIC);
 
     iOpenWindow(WIDTH, HEIGHT, TITLE);
 

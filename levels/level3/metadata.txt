@@ -1,2 +1,2 @@
 4
-blue
+background_blue.png

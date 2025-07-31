@@ -19,6 +19,10 @@ echo Using g++ from: %BASE_DIR%
 if not exist "obj" (
     mkdir obj
 )
+:: Create saves directory if it doesn't exist
+if not exist "saves" (
+    mkdir saves
+)
 :: Compile the source file to an object file (with irrKlang include path)
 
 g++.exe -w -fexceptions -g -I. -IOpenGL\\include -IOpenGL\\include\\SDL2 -IOpenGL\\include\\Freetype -c "%SOURCE_FILE%" -o obj\\opengl.o
