@@ -2,6 +2,8 @@
 
 A simple, fun, and customizable 2D platformer game built using [iGraphics v0.4.0](https://github.com/mahirlabibdihan/Modern-iGraphics) and C. This project was developed as the term project of the CSE 102 course of level 1, term 1 in BUET under the supervision of Sumaiya Sultana Ma'am. It demonstrates basic game functionalities, sprite animation, sound effects, saving and loading scores, and user interface design.
 
+[Watch Demo on YouTube](https://youtu.be/akZRgeMcUow)
+
 ---
 
 ## Table of Contents
